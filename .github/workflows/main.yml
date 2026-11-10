@@ -2,6 +2,7 @@ name: Build Kroty Net Real APK
 
 on:
   push:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -12,19 +13,63 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Clean and Run Python Builders
+      - name: Clean, Patch, and Run Python Builders
         run: |
           python3 - << 'EOF'
           import glob
-          for fname in sorted(glob.glob("*.py")):
-              print("Checking:", fname)
-              with open(fname, "r", encoding="utf-8") as f:
+
+          for fn in sorted(glob.glob("setup_part*.py")):
+              with open(fn, "r", encoding="utf-8") as f:
                   text = f.read()
-              marker = 'generated successfully!")'
-              if marker in text:
-                  text = text[:text.index(marker) + len(marker)] + "\n"
-              with open(fname, "w", encoding="utf-8") as f:
+
+              # 1. Strip any stray lines after the final print statement
+              lines = text.splitlines()
+              cleaned = []
+              for line in lines:
+                  cleaned.append(line)
+                  if 'generated successfully!")' in line:
+                      break
+              text = "\n".join(cleaned) + "\n"
+
+              # 2. Fix root-directory file creation in os.makedirs
+              text = text.replace(
+                  'os.makedirs(os.path.dirname(path), exist_ok=True)',
+                  'os.makedirs(os.path.dirname(path) or ".", exist_ok=True)'
+              )
+
+              # 3. Ensure clean Kotlin string escaping
+              text = text.replace(
+                  r'removePrefix("\"").removeSuffix("\"")',
+                  r'removePrefix("\\"").removeSuffix("\\"")'
+              )
+              text = text.replace(
+                  r'removeSurrounding("\"")',
+                  r'removeSurrounding("\\"")'
+              )
+              text = text.replace(
+                  r'Regex("\\s+")',
+                  r'Regex("\\\\s+")'
+              )
+              text = text.replace(
+                  r'Regex("[\\s\\-_.:]+")',
+                  r'Regex("[\\\\s\\\\-_.:]+")'
+              )
+              text = text.replace(
+                  r'''voucherCode.replace("'", "\\'").replace("\"", "\\\"")''',
+                  r'''voucherCode.replace("'", "\\\\'").replace("\\"", "\\\\\\"")'''
+              )
+              text = text.replace(
+                  r'${log.details}\n"',
+                  r'${log.details}\\n"'
+              )
+              text = text.replace(
+                  r'كود الكرت: ${v.code}\nالفئة: ${v.categoryLabel}\nالشبكة: ${v.ssid}',
+                  r'كود الكرت: ${v.code}\\nالفئة: ${v.categoryLabel}\\nالشبكة: ${v.ssid}'
+              )
+
+              with open(fn, "w", encoding="utf-8") as f:
                   f.write(text)
+              print("Patched and verified:", fn)
           EOF
           python3 setup_part1.py
           python3 setup_part2.py
@@ -32,7 +77,7 @@ jobs:
 
       - name: Package Full Source Project as ZIP
         run: |
-          zip -r KrotyNet-Full-Source-Project.zip app gradle build.gradle.kts settings.gradle.kts gradle.properties
+          zip -r KrotyNet-Full-Source-Project.zip settings.gradle.kts gradle.properties build.gradle.kts gradle app
 
       - name: Upload Full Source Project ZIP
         uses: actions/upload-artifact@v4
@@ -52,7 +97,7 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload Installable APK
         uses: actions/upload-artifact@v4
