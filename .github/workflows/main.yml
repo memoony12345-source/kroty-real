@@ -29,46 +29,30 @@ jobs:
                   cleaned.append(line)
                   if 'generated successfully!")' in line:
                       break
-              text = "\n".join(cleaned) + "\n"
 
-              # 2. Fix root-directory file creation in os.makedirs
-              text = text.replace(
-                  'os.makedirs(os.path.dirname(path), exist_ok=True)',
-                  'os.makedirs(os.path.dirname(path) or ".", exist_ok=True)'
-              )
+              # 2. Fix root-dir makedirs, enforce raw strings, and escape inner Kotlin """
+              fixed_lines = []
+              for line in cleaned:
+                  stripped = line.strip()
+                  if 'os.makedirs(os.path.dirname(path), exist_ok=True)' in line:
+                      line = line.replace(
+                          'os.makedirs(os.path.dirname(path), exist_ok=True)',
+                          'os.makedirs(os.path.dirname(path) or ".", exist_ok=True)'
+                      )
+                  elif stripped.startswith('write_file(') and stripped.endswith('"""'):
+                      if not stripped.endswith('r"""'):
+                          idx = line.rfind('"""')
+                          line = line[:idx] + 'r"""'
+                  elif stripped == '""")':
+                      pass
+                  else:
+                      if '"""' in line:
+                          line = line.replace('"""', '""" + \'"""\' + r"""')
+                  fixed_lines.append(line)
 
-              # 3. Ensure clean Kotlin string escaping
-              text = text.replace(
-                  r'removePrefix("\"").removeSuffix("\"")',
-                  r'removePrefix("\\"").removeSuffix("\\"")'
-              )
-              text = text.replace(
-                  r'removeSurrounding("\"")',
-                  r'removeSurrounding("\\"")'
-              )
-              text = text.replace(
-                  r'Regex("\\s+")',
-                  r'Regex("\\\\s+")'
-              )
-              text = text.replace(
-                  r'Regex("[\\s\\-_.:]+")',
-                  r'Regex("[\\\\s\\\\-_.:]+")'
-              )
-              text = text.replace(
-                  r'''voucherCode.replace("'", "\\'").replace("\"", "\\\"")''',
-                  r'''voucherCode.replace("'", "\\\\'").replace("\\"", "\\\\\\"")'''
-              )
-              text = text.replace(
-                  r'${log.details}\n"',
-                  r'${log.details}\\n"'
-              )
-              text = text.replace(
-                  r'كود الكرت: ${v.code}\nالفئة: ${v.categoryLabel}\nالشبكة: ${v.ssid}',
-                  r'كود الكرت: ${v.code}\\nالفئة: ${v.categoryLabel}\\nالشبكة: ${v.ssid}'
-              )
-
+              final_text = "\n".join(fixed_lines) + "\n"
               with open(fn, "w", encoding="utf-8") as f:
-                  f.write(text)
+                  f.write(final_text)
               print("Patched and verified:", fn)
           EOF
           python3 setup_part1.py
