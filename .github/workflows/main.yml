@@ -13,51 +13,43 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Clean, Patch, and Run Python Builders
+      - name: Direct Extract All 41 Project Files
         run: |
           python3 - << 'EOF'
-          import glob
+          import glob, os, re
 
+          total_files = 0
           for fn in sorted(glob.glob("setup_part*.py")):
+              print(f"=== Extracting from {fn} ===")
               with open(fn, "r", encoding="utf-8") as f:
-                  text = f.read()
+                  lines = f.read().splitlines()
 
-              # 1. Strip any stray lines after the final print statement
-              lines = text.splitlines()
-              cleaned = []
+              current_path = None
+              content_lines = []
+
               for line in lines:
-                  cleaned.append(line)
-                  if 'generated successfully!")' in line:
-                      break
-
-              # 2. Fix root-dir makedirs, enforce raw strings, and escape inner Kotlin """
-              fixed_lines = []
-              for line in cleaned:
-                  stripped = line.strip()
-                  if 'os.makedirs(os.path.dirname(path), exist_ok=True)' in line:
-                      line = line.replace(
-                          'os.makedirs(os.path.dirname(path), exist_ok=True)',
-                          'os.makedirs(os.path.dirname(path) or ".", exist_ok=True)'
-                      )
-                  elif stripped.startswith('write_file(') and stripped.endswith('"""'):
-                      if not stripped.endswith('r"""'):
-                          idx = line.rfind('"""')
-                          line = line[:idx] + 'r"""'
-                  elif stripped == '""")':
-                      pass
+                  if current_path is None:
+                      m = re.match(r'^\s*write_file\(\s*"([^"]+)"\s*,\s*r?"""(.*)$', line)
+                      if m:
+                          current_path = m.group(1).strip()
+                          first_line = m.group(2)
+                          content_lines = [first_line] if first_line else []
                   else:
-                      if '"""' in line:
-                          line = line.replace('"""', '""" + \'"""\' + r"""')
-                  fixed_lines.append(line)
+                      if line.strip() == '""")':
+                          os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
+                          with open(current_path, "w", encoding="utf-8") as out:
+                              out.write("\n".join(content_lines).strip() + "\n")
+                          total_files += 1
+                          print(f"[{total_files}] Extracted: {current_path}")
+                          current_path = None
+                          content_lines = []
+                      else:
+                          content_lines.append(line)
 
-              final_text = "\n".join(fixed_lines) + "\n"
-              with open(fn, "w", encoding="utf-8") as f:
-                  f.write(final_text)
-              print("Patched and verified:", fn)
+          print(f"Successfully extracted {total_files} files!")
+          if total_files < 40:
+              raise RuntimeError(f"Expected 41 files, but extracted {total_files}")
           EOF
-          python3 setup_part1.py
-          python3 setup_part2.py
-          python3 setup_part3.py
 
       - name: Package Full Source Project as ZIP
         run: |
