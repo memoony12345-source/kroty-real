@@ -18,38 +18,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore Working Base & Apply Scanner/Portal Upgrades to Standalone Files
+      - name: Restore Working Base and Upgrade Scanner and Portal UI
         run: |
-          python3 - << 'EOF'
+          python3 -c '
           import os, re, subprocess
 
           def extract_bundle(script_text):
               lines = script_text.splitlines()
               current_path = None
               content_lines = []
-              count = 0
               for line in lines:
                   if current_path is None:
-                      m = re.match(r'^\s*write_file\(\s*"([^"]+)"\s*,\s*r?"""(.*)$', line)
+                      m = re.match(r"^\s*write_file\(\s*\"([^\"]+)\"\s*,\s*r?\"\"\"(.*)$", line)
                       if m:
                           current_path = m.group(1).strip()
                           first_line = m.group(2)
                           content_lines = [first_line] if first_line else []
                   else:
-                      if line.strip() == '""")':
+                      if line.strip() == "\"\"\")":
                           os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
                           file_text = "\n".join(content_lines).strip() + "\n"
                           with open(current_path, "w", encoding="utf-8") as out:
                               out.write(file_text)
-                          count += 1
-                          print(f"Restored standalone file: {current_path}")
+                          print("Restored:", current_path)
                           current_path = None
                           content_lines = []
                       else:
                           content_lines.append(line)
-              return count
 
-          # Recover the exact working setup_part1.py, setup_part2.py, and original working setup_part3.py from git history
           for idx, fn in enumerate(["setup_part1.py", "setup_part2.py", "setup_part3.py"], start=1):
               cmd = (
                   f"git log --reverse --pretty=format:%H -- {fn} | head -n 1"
@@ -61,146 +57,75 @@ jobs:
                   raw_script = subprocess.check_output(["git", "show", f"{commit_hash}:{fn}"], text=True)
                   extract_bundle(raw_script)
 
-          # 1. Upgrade ScannerScreen.kt (Prominent Flash & Gallery Buttons + Scrollable Chips + COMPATIBLE PreviewView)
           scanner_path = "app/src/main/java/com/example/ui/screens/ScannerScreen.kt"
           if os.path.exists(scanner_path):
               with open(scanner_path, "r", encoding="utf-8") as f:
-                  s_code = f.read()
-
-              if "import androidx.compose.foundation.horizontalScroll" not in s_code:
-                  s_code = s_code.replace(
+                  s = f.read()
+              if "import androidx.compose.foundation.horizontalScroll" not in s:
+                  s = s.replace(
                       "import androidx.compose.foundation.rememberScrollState",
                       "import androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.horizontalScroll"
                   )
-
-              # Shorten title so header icons are also visible
-              s_code = s_code.replace(
-                  '"الماسح الحقيقي للكروت (CameraX + ML Kit)"',
-                  '"الماسح الذكي للكروت"'
+              s = s.replace(
+                  "\"الماسح الحقيقي للكروت (CameraX + ML Kit)\"",
+                  "\"الماسح الذكي للكروت\""
               )
-
-              # Make PreviewView use COMPATIBLE mode for 100% reliability inside rounded cards
-              s_code = s_code.replace(
+              s = s.replace(
                   "val previewView = PreviewView(ctx)",
-                  "val previewView = PreviewView(ctx).apply {\n                                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE\n                                    scaleType = PreviewView.ScaleType.FILL_CENTER\n                                }"
+                  "val previewView = PreviewView(ctx).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER }"
               )
-
-              # Inject Prominent Arabic Flash & Gallery Control Bar right above the Zoom Slider
-              flash_gallery_bar = """
-                // Prominent Flash & Gallery Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            val newState = !torchEnabled
-                            torchEnabled = newState
-                            cameraRef?.cameraControl?.enableTorch(newState)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (torchEnabled) KrotyAmber else KrotyCardBorder
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(46.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                            contentDescription = "الفلاش",
-                            tint = if (torchEnabled) KrotyDarkBg else KrotyAmber
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (torchEnabled) "إطفاء الفلاش" else "تشغيل الفلاش",
-                            color = if (torchEnabled) KrotyDarkBg else KrotyTextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    Button(
-                        onClick = { galleryLauncher.launch("image/*") },
-                        colors = ButtonDefaults.buttonColors(containerColor = KrotyCardBorder),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(46.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "المعرض",
-                            tint = KrotyCyan
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "صورة من المعرض",
-                            color = KrotyCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-"""
-              if "صورة من المعرض" not in s_code:
-                  s_code = s_code.replace(
-                      'Text("تقريب العدسة:',
-                      flash_gallery_bar + '\n                    Text("تقريب العدسة:'
-                  )
-
-              # Make the length filter chips Row horizontally scrollable so "12 رقم" never wraps vertically
-              s_code = s_code.replace(
-                  "horizontalArrangement = Arrangement.spacedBy(6.dp)\n                ) {\n                    lengthOptions.forEach",
-                  "horizontalArrangement = Arrangement.spacedBy(8.dp),\n                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())\n                ) {\n                    lengthOptions.forEach"
-              )
-              s_code = s_code.replace(
+              bar_lines = [
+                  "Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {",
+                  "    Button(onClick = { val ns = !torchEnabled; torchEnabled = ns; cameraRef?.cameraControl?.enableTorch(ns) }, colors = ButtonDefaults.buttonColors(containerColor = if (torchEnabled) KrotyAmber else KrotyCardBorder), shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).height(46.dp)) {",
+                  "        Icon(imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff, contentDescription = null, tint = if (torchEnabled) KrotyDarkBg else KrotyAmber)",
+                  "        Spacer(modifier = Modifier.width(6.dp))",
+                  "        Text(text = if (torchEnabled) \"إطفاء الفلاش\" else \"تشغيل الفلاش\", color = if (torchEnabled) KrotyDarkBg else KrotyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)",
+                  "    }",
+                  "    Button(onClick = { galleryLauncher.launch(\"image/*\") }, colors = ButtonDefaults.buttonColors(containerColor = KrotyCardBorder), shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).height(46.dp)) {",
+                  "        Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, tint = KrotyCyan)",
+                  "        Spacer(modifier = Modifier.width(6.dp))",
+                  "        Text(text = \"صورة من المعرض\", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)",
+                  "    }",
+                  "}",
+                  "Row("
+              ]
+              s = s.replace("Row(\n                    modifier = Modifier.fillMaxWidth(),\n                    verticalAlignment = Alignment.CenterVertically\n                ) {\n                    Text(\"تقريب العدسة:", "\n".join(bar_lines) + "\n                    modifier = Modifier.fillMaxWidth(),\n                    verticalAlignment = Alignment.CenterVertically\n                ) {\n                    Text(\"تقريب العدسة:")
+              s = s.replace(
                   "modifier = Modifier.fillMaxWidth(),\n                    horizontalArrangement = Arrangement.spacedBy(6.dp)\n                ) {\n                    lengthOptions.forEach",
                   "modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),\n                    horizontalArrangement = Arrangement.spacedBy(8.dp)\n                ) {\n                    lengthOptions.forEach"
               )
-
               with open(scanner_path, "w", encoding="utf-8") as f:
-                  f.write(s_code)
-              print("Successfully upgraded ScannerScreen.kt!")
+                  f.write(s)
 
-          # 2. Upgrade RadarScreen.kt (Enhanced Portal Cockpit Controls & Responsive WebView)
           radar_path = "app/src/main/java/com/example/ui/screens/RadarScreen.kt"
           if os.path.exists(radar_path):
               with open(radar_path, "r", encoding="utf-8") as f:
-                  r_code = f.read()
-
-              if "import androidx.compose.foundation.horizontalScroll" not in r_code:
-                  r_code = r_code.replace(
-                      "import androidx.compose.foundation.background",
-                      "import androidx.compose.foundation.background\nimport androidx.compose.foundation.horizontalScroll\nimport androidx.compose.foundation.rememberScrollState"
-                  )
-
-              r_code = r_code.replace(
+                  r = f.read()
+              r = r.replace(
                   "settings.javaScriptEnabled = true\n                            settings.domStorageEnabled = true",
                   "settings.javaScriptEnabled = true\n                            settings.domStorageEnabled = true\n                            settings.loadWithOverviewMode = true\n                            settings.useWideViewPort = true\n                            settings.builtInZoomControls = true\n                            settings.displayZoomControls = false"
               )
-
-              r_code = r_code.replace(
-                  '"بوابة المايكروتك الحقيقية (${telemetry.ssid})"',
-                  '"بوابة ${telemetry.ssid} • الرصيد: ${portalState.liveRemainingMb}"'
+              r = r.replace(
+                  "\"بوابة المايكروتك الحقيقية (${telemetry.ssid})\"",
+                  "\"بوابة ${telemetry.ssid} • الرصيد: ${portalState.liveRemainingMb}\""
               )
-
-              # Add Reload & Back buttons next to the Close button in the Portal Top Bar
-              r_code = r_code.replace(
-                  'IconButton(onClick = { viewModel.closePortalDialog() }) {',
-                  'Row {\n                            IconButton(onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() }) {\n                                Icon(Icons.Default.ArrowForward, contentDescription = "رجوع", tint = KrotyTextPrimary)\n                            }\n                            IconButton(onClick = { webViewRef?.reload() }) {\n                                Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = KrotyCyan)\n                            }\n                            IconButton(onClick = { viewModel.closePortalDialog() }) {'
+              r = r.replace(
+                  "IconButton(onClick = { viewModel.closePortalDialog() }) {",
+                  "Row { IconButton(onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() }) { Icon(Icons.Default.ArrowForward, contentDescription = null, tint = KrotyTextPrimary) }; IconButton(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = null, tint = KrotyCyan) }; IconButton(onClick = { viewModel.closePortalDialog() }) {"
               )
-              r_code = r_code.replace(
-                  'Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = KrotyTextPrimary)\n                        }',
-                  'Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = KrotyCoralRed)\n                            }\n                        }'
+              r = r.replace(
+                  "Icon(Icons.Default.Close, contentDescription = \"إغلاق\", tint = KrotyTextPrimary)\n                        }",
+                  "Icon(Icons.Default.Close, contentDescription = \"إغلاق\", tint = KrotyCoralRed)\n                        } }"
               )
-
               with open(radar_path, "w", encoding="utf-8") as f:
-                  f.write(r_code)
-              print("Successfully upgraded RadarScreen.kt!")
-          EOF
+                  f.write(r)
+          '
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f setup_part*.py 2>/dev/null || true
           git add settings.gradle.kts gradle.properties build.gradle.kts gradle app
-          git commit -m "Finalize standalone files with upgraded Scanner & Portal UI [skip ci]" || true
+          git commit -m "Finalize standalone files with upgraded Scanner and Portal UI [skip ci]" || true
           git push || true
 
       - name: Set up JDK 17
