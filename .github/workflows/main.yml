@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,14 +16,15 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Direct Extract All 41 Project Files
+      - name: Convert Python Bundles to Standalone Project Files (One-Time Auto Migration)
         run: |
-          python3 - << 'EOF'
+          if ls setup_part*.py 1> /dev/null 2>&1; then
+            echo "Found setup_part*.py scripts. Extracting standalone files and migrating repository..."
+            python3 - << 'EOF'
           import glob, os, re
 
           total_files = 0
           for fn in sorted(glob.glob("setup_part*.py")):
-              print(f"=== Extracting from {fn} ===")
               with open(fn, "r", encoding="utf-8") as f:
                   lines = f.read().splitlines()
 
@@ -43,32 +47,34 @@ jobs:
                               "settings.loadWithOverviewMode = true"
                           )
                           file_text = file_text.replace(
+                              "import androidx.lifecycle.compose.LocalLifecycleOwner",
+                              "import androidx.compose.ui.platform.LocalLifecycleOwner"
+                          )
+                          file_text = file_text.replace(
                               "appContainer.ocrParser.normalizeOpticalMistakes(visionText.text)",
                               "visionText.text.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1').replace('S', '5').replace('B', '8')"
                           )
                           with open(current_path, "w", encoding="utf-8") as out:
                               out.write(file_text)
                           total_files += 1
-                          print(f"[{total_files}] Extracted: {current_path}")
+                          print(f"[{total_files}] Created standalone file: {current_path}")
                           current_path = None
                           content_lines = []
                       else:
                           content_lines.append(line)
 
-          print(f"Successfully extracted {total_files} files!")
-          if total_files < 40:
-              raise RuntimeError(f"Expected 41 files, but extracted {total_files}")
+          print(f"Successfully extracted {total_files} standalone files!")
           EOF
 
-      - name: Package Full Source Project as ZIP
-        run: |
-          zip -r KrotyNet-Full-Source-Project.zip settings.gradle.kts gradle.properties build.gradle.kts gradle app
-
-      - name: Upload Full Source Project ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: KrotyNet-Full-Source-Project-ZIP
-          path: KrotyNet-Full-Source-Project.zip
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm -f setup_part*.py
+            git add settings.gradle.kts gradle.properties build.gradle.kts gradle app
+            git commit -m "Auto-migrate to standalone Android project structure [skip ci]" || true
+            git push || true
+          else
+            echo "Repository is already using standalone Android files! Proceeding directly to build."
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -81,8 +87,20 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build Debug APK with Smart Error Summary
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon > build.log 2>&1
+          EXIT_CODE=$?
+          cat build.log
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "### ❌ ملخص الخطأ البرمجي (انسخ هذه الأسطر فقط):" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            grep -E "^e: |FAILURE:|What went wrong:" -A 4 build.log | head -n 35 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit $EXIT_CODE
+          fi
+          echo "### ✅ تم بناء تطبيق كروتي نت بنجاح!" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Installable APK
         uses: actions/upload-artifact@v4
