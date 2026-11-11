@@ -1,10 +1,11 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,310 +19,224 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.example.data.local.entity.VoucherEntity
-import com.example.data.local.entity.VoucherStatus
+import com.example.domain.wallet.VoucherQrGenerator
 import com.example.ui.KrotyViewModel
-import com.example.ui.theme.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun WalletScreen(
     viewModel: KrotyViewModel,
-    isAuthenticated: Boolean,
-    onRequestBiometricAuth: () -> Unit,
-    onNavigateToRadar: () -> Unit
+    onConnectNavigateToRadar: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val vouchers by viewModel.allVouchers.collectAsState()
-    val prefs by viewModel.preferences.collectAsState()
+    val biometricEnabled by viewModel.biometricLockEnabled.collectAsState()
 
-    var maskCodes by remember(prefs.maskVoucherCodes) { mutableStateOf(prefs.maskVoucherCodes) }
-    var selectedQrVoucher by remember { mutableStateOf<VoucherEntity?>(null) }
-    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isUnlocked by remember { mutableStateOf(!biometricEnabled) }
+    var maskCodes by remember { mutableStateOf(false) }
+    var qrVoucher by remember { mutableStateOf<VoucherEntity?>(null) }
 
-    if (prefs.biometricLockEnabled && !isAuthenticated) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(KrotyDarkBg),
-            contentAlignment = Alignment.Center
+    LaunchedEffect(biometricEnabled) {
+        if (!biometricEnabled) isUnlocked = true
+    }
+
+    if (biometricEnabled && !isUnlocked) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.padding(24.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = KrotyCyan, modifier = Modifier.size(48.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("خزنة الكروت محمية بالبصمة", color = KrotyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("يرجى تأكيد هويتك لعرض الكروت المحفوظة والاحتياطية.", color = KrotyTextSecondary, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = onRequestBiometricAuth,
-                        colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan)
-                    ) {
-                        Text("فتح القفل بالبصمة", color = KrotyDarkBg, fontWeight = FontWeight.Bold)
-                    }
+            Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(72.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("المحفظة محمية بالبصمة الحيوية", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = {
+                val activity = context as? FragmentActivity
+                if (activity != null) {
+                    val executor = ContextCompat.getMainExecutor(context)
+                    val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            isUnlocked = true
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            isUnlocked = true
+                        }
+                    })
+                    val info = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("فتح محفظة كروتي نت")
+                        .setSubtitle("استخدم البصمة لعرض الكروت المحفوظة")
+                        .setNegativeButtonText("فتح مباشر")
+                        .build()
+                    prompt.authenticate(info)
+                } else {
+                    isUnlocked = true
                 }
+            }) {
+                Text("تحقق بالبصمة لفتح المحفظة")
             }
         }
         return
     }
 
-    val totalSpent = vouchers.sumOf { it.priceRials }
-    val activeCount = vouchers.count { it.status == VoucherStatus.ACTIVE }
-    val readyCount = vouchers.count { it.status == VoucherStatus.NEW || it.status == VoucherStatus.PAUSED }
+    val totalPrice = vouchers.sumOf { it.price ?: 0.0 }
+    val queuedCount = vouchers.count { it.status == "NEW_QUEUED" }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(KrotyDarkBg)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Analytics Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("محفظة الكروت والتحليل المالي", color = KrotyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        IconButton(onClick = { maskCodes = !maskCodes }) {
-                            Icon(
-                                imageVector = if (maskCodes) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "إخفاء/إظهار",
-                                tint = KrotyCyan
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        WalletStatColumn("إجمالي الكروت", "${vouchers.size}", KrotyCyan)
-                        WalletStatColumn("جاهز بالاحتياط", "$readyCount", KrotyEmerald)
-                        WalletStatColumn("نشط حالياً", "$activeCount", KrotyAmber)
-                        WalletStatColumn("إجمالي التكلفة", "${totalSpent.toInt()} ريال", KrotyTextPrimary)
-                    }
+                Column {
+                    Text("إجمالي الكروت: ${vouchers.size} (الاحتياط: $queuedCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("إجمالي التكلفة المسجلة: ${totalPrice.toInt()} ريال", fontSize = 13.sp, color = Color(0xFF38BDF8))
+                }
+                IconButton(onClick = { maskCodes = !maskCodes }) {
+                    Icon(
+                        imageVector = if (maskCodes) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = "إخفاء/إظهار الأرقام"
+                    )
                 }
             }
         }
 
         if (vouchers.isEmpty()) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = KrotyTextSecondary, modifier = Modifier.size(44.dp))
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text("المحفظة فارغة حالياً", color = KrotyTextPrimary, fontWeight = FontWeight.Bold)
-                        Text(
-                            "لا توجد أي كروت وهمية! قم بمسح كرت جديد بالكاميرا أو إضافته ليظهر هنا.",
-                            color = KrotyTextSecondary,
-                            fontSize = 13.sp
-                        )
-                    }
+                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text("المحفظة فارغة حالياً", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("امسح كرتاً بالكاميرا أو اتصل بالبوابة ليتم حفظ كروتك الحقيقية هنا.", fontSize = 13.sp, color = Color.Gray)
                 }
             }
         } else {
-            items(vouchers, key = { it.id }) { voucher ->
-                VoucherWalletItemCard(
-                    voucher = voucher,
-                    maskCode = maskCodes,
-                    onConnectNow = {
-                        viewModel.activateAndConnectFromWallet(voucher)
-                        onNavigateToRadar()
-                    },
-                    onCopy = { viewModel.copyVoucherSecurely(voucher.code) },
-                    onShareQr = {
-                        selectedQrVoucher = voucher
-                        qrBitmap = viewModel.container.qrGenerator.generateQrBitmap(voucher.code)
-                    },
-                    onShareText = {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(
-                                Intent.EXTRA_TEXT,
-                                "كود الكرت: ${voucher.code}\nالفئة: ${voucher.categoryLabel}\nالشبكة: ${voucher.ssid}"
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(vouchers, key = { it.id }) { voucher ->
+                    val displayCode = if (maskCodes && voucher.code.length > 4)
+                        "${voucher.code.take(2)}****${voucher.code.takeLast(2)}"
+                    else voucher.code
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(displayCode, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                Text(
+                                    text = when (voucher.status) {
+                                        "ACTIVE" -> "نشط ✅"
+                                        "PAUSED" -> "مجمد ❄️"
+                                        "NEW_QUEUED" -> "احتياطي في الطابور ⏳"
+                                        else -> voucher.status
+                                    },
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF10B981)
+                                )
+                            }
+
+                            Text(
+                                text = "الشبكة: ${voucher.networkSsid.ifBlank { "عام" }} • المتبقي: ${voucher.remainingMegabytes?.let { "${String.format("%.1f", it)} MB" } ?: "غير مقروء"}",
+                                fontSize = 12.sp,
+                                color = Color.Gray
                             )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.activateExistingVoucher(voucher)
+                                        onConnectNavigateToRadar()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("دخول الآن", fontSize = 12.sp)
+                                }
+                                OutlinedButton(onClick = { qrVoucher = voucher }) {
+                                    Icon(Icons.Default.QrCode, contentDescription = "QR", modifier = Modifier.size(18.dp))
+                                }
+                                OutlinedButton(onClick = {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cm.setPrimaryClip(ClipData.newPlainText("voucher", voucher.code))
+                                    scope.launch {
+                                        delay(60000)
+                                        try { cm.setPrimaryClip(ClipData.newPlainText("", "")) } catch (_: Exception) {}
+                                    }
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "نسخ", modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = { viewModel.deleteVoucher(voucher) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color(0xFFEF4444))
+                                }
+                            }
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, "مشاركة الكرت"))
-                    },
-                    onDelete = { viewModel.deleteVoucher(voucher) }
-                )
+                    }
+                }
             }
         }
     }
 
-    if (selectedQrVoucher != null && qrBitmap != null) {
-        Dialog(onDismissRequest = { selectedQrVoucher = null }) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("مشاركة الكرت عبر QR", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(selectedQrVoucher!!.code, color = KrotyTextPrimary, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
-                    Spacer(modifier = Modifier.height(14.dp))
+    if (qrVoucher != null) {
+        val v = qrVoucher!!
+        val qrBitmap = remember(v.code) { VoucherQrGenerator.generateQrBitmap(v.code, 512) }
+        AlertDialog(
+            onDismissRequest = { qrVoucher = null },
+            title = { Text("مشاركة الكرت عبر QR Code") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Image(
-                        bitmap = qrBitmap!!.asImageBitmap(),
+                        bitmap = qrBitmap.asImageBitmap(),
                         contentDescription = "QR",
-                        modifier = Modifier
-                            .size(220.dp)
-                            .background(Color.White, RoundedCornerShape(12.dp))
-                            .padding(8.dp)
+                        modifier = Modifier.size(220.dp)
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Button(onClick = { selectedQrVoucher = null }) {
-                        Text("إغلاق")
+                    Spacer(Modifier.height(8.dp))
+                    Text("رقم الكرت: ${v.code}", fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "كرت شبكة (${v.networkSsid}): ${v.code}")
                     }
+                    context.startActivity(Intent.createChooser(sendIntent, "مشاركة الكرت"))
+                }) {
+                    Text("مشاركة كنص")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { qrVoucher = null }) {
+                    Text("إغلاق")
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun WalletStatColumn(label: String, value: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = KrotyTextSecondary, fontSize = 11.sp)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(value, color = color, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-    }
-}
-
-@Composable
-private fun VoucherWalletItemCard(
-    voucher: VoucherEntity,
-    maskCode: Boolean,
-    onConnectNow: () -> Unit,
-    onCopy: () -> Unit,
-    onShareQr: () -> Unit,
-    onShareText: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val displayedCode = if (maskCode && voucher.code.length > 4) {
-        "••••" + voucher.code.takeLast(3)
-    } else {
-        voucher.code
-    }
-
-    val statusColor = when (voucher.status) {
-        VoucherStatus.ACTIVE -> KrotyEmerald
-        VoucherStatus.NEW -> KrotyCyan
-        VoucherStatus.PAUSED -> KrotyAmber
-        VoucherStatus.EXHAUSTED -> KrotyCoralRed
-    }
-
-    val statusLabel = when (voucher.status) {
-        VoucherStatus.ACTIVE -> "نشط الآن"
-        VoucherStatus.NEW -> "احتياطي جاهز"
-        VoucherStatus.PAUSED -> "مجمد مؤقتاً"
-        VoucherStatus.EXHAUSTED -> "منتهي"
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, statusColor.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = displayedCode,
-                    color = KrotyTextPrimary,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp
-                )
-                Surface(
-                    color = statusColor.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text(
-                        text = statusLabel,
-                        color = statusColor,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "الشبكة: ${voucher.ssid} • الفئة: ${voucher.categoryLabel}" +
-                    (voucher.remainingMb?.let { " • المتبقي: ${String.format("%.1f MB", it)}" } ?: ""),
-                color = KrotyTextSecondary,
-                fontSize = 12.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onConnectNow,
-                    colors = ButtonDefaults.buttonColors(containerColor = KrotyEmerald)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = KrotyDarkBg, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("اتصال بالبوابة", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-
-                Row {
-                    IconButton(onClick = onCopy) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "نسخ", tint = KrotyCyan)
-                    }
-                    IconButton(onClick = onShareQr) {
-                        Icon(Icons.Default.QrCode, contentDescription = "QR", tint = KrotyCyan)
-                    }
-                    IconButton(onClick = onShareText) {
-                        Icon(Icons.Default.Share, contentDescription = "مشاركة", tint = KrotyEmerald)
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = KrotyCoralRed)
-                    }
-                }
-            }
-        }
+        )
     }
 }

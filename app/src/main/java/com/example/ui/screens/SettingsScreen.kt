@@ -1,178 +1,158 @@
 package com.example.ui.screens
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import android.content.Intent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.KrotyViewModel
-import com.example.ui.theme.*
+import com.example.worker.SmartBalanceWorker
 import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(viewModel: KrotyViewModel) {
-    val prefs by viewModel.preferences.collectAsState()
-    val networks by viewModel.allNetworks.collectAsState()
-    val logs by viewModel.recentLogs.collectAsState()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri: Uri? ->
-        if (uri != null) viewModel.exportBackup(uri)
-    }
+    val networks by viewModel.allNetworks.collectAsState()
+    val logs by viewModel.logs.collectAsState()
+    val ghostMode by viewModel.ghostModeEnabled.collectAsState()
+    val dataSaver by viewModel.dataSaverEnabled.collectAsState()
+    val biometricLock by viewModel.biometricLockEnabled.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
 
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) viewModel.importBackup(uri)
-    }
+    var backupJsonDialogText by remember { mutableStateOf<String?>(null) }
+    var importJsonInput by remember { mutableStateOf("") }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var feedbackBanner by remember { mutableStateOf<String?>(null) }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(KrotyDarkBg)
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text("الأمان والأتمتة الذكية", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
+        feedbackBanner?.let {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B))) {
+                Text(it, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 13.sp)
+            }
+        }
 
-                    SettingToggleRow(
-                        title = "قفل محفظة الكروت بالبصمة (Biometric Lock)",
-                        subtitle = "حماية الكروت المخزنة ببصمة الإصبع أو الوجه",
-                        checked = prefs.biometricLockEnabled,
-                        onCheckedChange = {
-                            scope.launch { viewModel.container.preferencesRepository.setBiometricLock(it) }
-                        }
-                    )
+        // General Preferences
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("الإعدادات الذكية والمظهر", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
-                    HorizontalDivider(color = KrotyCardBorder, modifier = Modifier.padding(vertical = 8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("وضع الدخول التلقائي بالبوابة", fontSize = 14.sp)
+                    Switch(checked = ghostMode, onCheckedChange = { viewModel.setGhostMode(it) })
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("حماية المحفظة بالبصمة", fontSize = 14.sp)
+                    Switch(checked = biometricLock, onCheckedChange = { viewModel.setBiometricLock(it) })
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("توفير بيانات الكرت داخل البوابة", fontSize = 14.sp)
+                    Switch(checked = dataSaver, onCheckedChange = { viewModel.setDataSaver(it) })
+                }
 
-                    SettingToggleRow(
-                        title = "إخفاء أرقام الكروت افتراضياً (Privacy Mask)",
-                        subtitle = "حماية أرقام الكروت من التلصص على الشاشة",
-                        checked = prefs.maskVoucherCodes,
-                        onCheckedChange = {
-                            scope.launch { viewModel.container.preferencesRepository.setMaskVoucherCodes(it) }
-                        }
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = themeMode == "DARK", onClick = { viewModel.setThemeMode("DARK") }, label = { Text("داكن ملكي") })
+                    FilterChip(selected = themeMode == "AMOLED", onClick = { viewModel.setThemeMode("AMOLED") }, label = { Text("أسود AMOLED") })
+                    FilterChip(selected = themeMode == "LIGHT", onClick = { viewModel.setThemeMode("LIGHT") }, label = { Text("فاتح") })
+                }
 
-                    HorizontalDivider(color = KrotyCardBorder, modifier = Modifier.padding(vertical = 8.dp))
-
-                    SettingToggleRow(
-                        title = "تجميد الكرت عند إغلاق الشاشة (Auto-Freeze)",
-                        subtitle = "إرسال طلب تسجيل خروج مؤقت لتوفير الرصيد",
-                        checked = prefs.autoFreezeOnScreenOff,
-                        onCheckedChange = {
-                            scope.launch { viewModel.container.preferencesRepository.setAutoFreezeOnScreenOff(it) }
-                        }
-                    )
+                Button(
+                    onClick = {
+                        SmartBalanceWorker.runOnceNow(context)
+                        feedbackBanner = "✅ تم تشغيل فحص الرصيد الخلفي وتحديث الودجت الآن"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("تشغيل فحص الرصيد الخلفي وتحديث الودجت الآن")
                 }
             }
         }
 
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text("النسخ الاحتياطي والاستعادة (JSON)", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "احفظ كافة كروتك وإعدادات شبكات المايكروتك في ملف خارجي أو استعدها في أي وقت.",
-                        color = KrotyTextSecondary,
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Backup & Restore Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("النسخ الاحتياطي والاستعادة (JSON)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                backupJsonDialogText = viewModel.exportBackupJson()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Button(
-                            onClick = { exportLauncher.launch("kroty_net_backup.json") },
-                            colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.UploadFile, contentDescription = null, tint = KrotyDarkBg)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("تصدير الكروت", color = KrotyDarkBg, fontWeight = FontWeight.Bold)
-                        }
-                        OutlinedButton(
-                            onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = KrotyEmerald)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("استيراد نسخة", color = KrotyEmerald, fontWeight = FontWeight.Bold)
-                        }
+                        Text("تصدير الكروت والشبكات")
+                    }
+                    OutlinedButton(
+                        onClick = { showImportDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("استعادة نسخة")
                     }
                 }
             }
         }
 
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text("الشبكات المكتشفة والمحفوظة (${networks.size})", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (networks.isEmpty()) {
-                        Text("سيتم حفظ كل شبكة مايكروتك تتصل بها تلقائياً هنا مع بوابتها الخاصة.", color = KrotyTextSecondary, fontSize = 12.sp)
-                    } else {
-                        networks.forEach { net ->
+        // Discovered Dynamic Networks Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("الشبكات المكتشفة تلقائياً (${networks.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                if (networks.isEmpty()) {
+                    Text("لم يتم حفظ أي شبكة بعد. اتصل بالواي فاي ليتم اكتشاف البوابة تلقائياً.", fontSize = 12.sp, color = Color.Gray)
+                } else {
+                    networks.forEach { net ->
+                        Surface(
+                            color = Color(0xFF0F172A),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp),
+                                modifier = Modifier.padding(12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(net.ssid, color = KrotyTextPrimary, fontWeight = FontWeight.Bold)
-                                    Text(
-                                        "البوابة: ${net.gatewayIp} • الحقل المخصص: ${net.voucherFieldSelector.ifBlank { "تلقائي" }}",
-                                        color = KrotyTextSecondary,
-                                        fontSize = 12.sp
-                                    )
+                                    Text(net.ssid, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text("البوابة: ${net.gatewayIp} • الدخول: ${net.loginUrl}", fontSize = 11.sp, color = Color(0xFF38BDF8))
                                 }
-                                IconButton(
-                                    onClick = {
-                                        scope.launch { viewModel.container.repository.deleteNetwork(net) }
+                                if (net.learnedInputSelector != null) {
+                                    TextButton(onClick = {
+                                        viewModel.updateNetworkSettings(net.copy(learnedInputSelector = null))
+                                    }) {
+                                        Text("مسح المربع المتعلم", fontSize = 11.sp)
                                     }
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = KrotyCoralRed)
                                 }
                             }
                         }
@@ -181,42 +161,84 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
             }
         }
 
-        if (logs.isNotEmpty()) {
-            item {
-                Text("سجل العمليات الحية", color = KrotyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-            items(logs.take(15)) { log ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("${log.eventType} • ${log.ssid}", color = KrotyCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(log.details, color = KrotyTextSecondary, fontSize = 12.sp)
+        // Real Connection Logs
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("السجل التشخيصي المباشر (${logs.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    TextButton(onClick = { viewModel.clearLogs() }) {
+                        Text("مسح السجل")
+                    }
+                }
+                if (logs.isEmpty()) {
+                    Text("لا توجد أحداث مسجلة بعد.", fontSize = 12.sp, color = Color.Gray)
+                } else {
+                    logs.take(15).forEach { log ->
+                        Text("• [${log.networkSsid}] ${log.messageAr}", fontSize = 12.sp, color = Color(0xFFCBD5E1))
                     }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun SettingToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = KrotyTextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(subtitle, color = KrotyTextSecondary, fontSize = 12.sp)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    if (backupJsonDialogText != null) {
+        val jsonText = backupJsonDialogText!!
+        AlertDialog(
+            onDismissRequest = { backupJsonDialogText = null },
+            title = { Text("النسخة الاحتياطية (JSON)") },
+            text = {
+                OutlinedTextField(
+                    value = jsonText,
+                    onValueChange = {},
+                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, jsonText)
+                    }
+                    context.startActivity(Intent.createChooser(share, "مشاركة النسخة الاحتياطية"))
+                }) {
+                    Text("مشاركة / حفظ")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupJsonDialogText = null }) { Text("إغلاق") }
+            }
+        )
+    }
+
+    if (showImportDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportDialog = false },
+            title = { Text("استعادة نسخة احتياطية") },
+            text = {
+                OutlinedTextField(
+                    value = importJsonInput,
+                    onValueChange = { importJsonInput = it },
+                    label = { Text("الصق كود JSON هنا") },
+                    modifier = Modifier.fillMaxWidth().height(180.dp)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.importBackupJson(importJsonInput) { _, msg ->
+                        feedbackBanner = msg
+                        showImportDialog = false
+                    }
+                }) {
+                    Text("استيراد الآن")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportDialog = false }) { Text("إلغاء") }
+            }
+        )
     }
 }

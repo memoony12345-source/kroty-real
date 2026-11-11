@@ -1,518 +1,361 @@
 package com.example.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.net.Uri
-import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.entity.ConnectionLogEntity
 import com.example.data.local.entity.NetworkEntity
 import com.example.data.local.entity.VoucherEntity
-import com.example.data.local.entity.VoucherStatus
-import com.example.data.preferences.UserPreferencesState
-import com.example.di.AppContainer
-import com.example.domain.radar.WifiTelemetry
-import com.example.domain.system.KrotySmartWidgetProvider
-import com.example.domain.system.SmartBalanceWorker
-import com.example.domain.web.MikroTikErrorType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
+import com.example.data.preferences.UserPreferencesRepository
+import com.example.data.repository.KrotyRepository
+import com.example.domain.network.CaptivePortalProber
+import com.example.domain.network.LiveWifiState
+import com.example.domain.network.WifiRadarEngine
+import com.example.domain.wallet.BackupRestoreManager
+import com.example.domain.web.BalanceAndErrorParser
+import com.example.widget.KrotySmartWidgetProvider
+import com.example.worker.KrotyNotificationHelper
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-data class PortalUiState(
-    val isPortalDialogOpen: Boolean = false,
-    val currentPortalUrl: String = "",
-    val activePortalHost: String = "",
+data class PortalSessionState(
+    val currentNetwork: NetworkEntity? = null,
+    val statusMessage: String = "جاري فحص الشبكة المتصلة...",
+    val isProbing: Boolean = false,
+    val isInternetReachable: Boolean = false,
     val pendingAutoLoginCode: String? = null,
-    val pendingAutoLoginPassword: String = "",
-    val touchToLearnMode: Boolean = false,
-    val liveRemainingMb: String = "غير متزامن",
-    val liveRemainingTime: String = "غير متزامن",
-    val statusBannerMessage: String? = null,
-    val isProbingSession: Boolean = false
+    val openWebPortalAutomatically: Boolean = false
 )
 
 class KrotyViewModel(
     private val appContext: Context,
-    val container: AppContainer
+    private val repository: KrotyRepository,
+    private val preferences: UserPreferencesRepository,
+    val wifiRadar: WifiRadarEngine,
+    private val portalProber: CaptivePortalProber
 ) : ViewModel() {
 
-    val wifiTelemetry: StateFlow<WifiTelemetry> = container.wifiRadarEngine.telemetry
+    val wifiState: StateFlow<LiveWifiState> = wifiRadar.wifiState
+    val allNetworks: StateFlow<List<NetworkEntity>> =
+        repository.allNetworks.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allVouchers: StateFlow<List<VoucherEntity>> =
+        repository.allVouchers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val activeVoucher: StateFlow<VoucherEntity?> =
+        repository.activeVoucher.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val logs: StateFlow<List<ConnectionLogEntity>> =
+        repository.logs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allVouchers: StateFlow<List<VoucherEntity>> = container.repository.allVouchers
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val ghostModeEnabled: StateFlow<Boolean> =
+        preferences.ghostModeEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val dataSaverEnabled: StateFlow<Boolean> =
+        preferences.dataSaverEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val lowBalanceAlertMb: StateFlow<Int> =
+        preferences.lowBalanceAlertMb.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
+    val biometricLockEnabled: StateFlow<Boolean> =
+        preferences.biometricLockEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val themeMode: StateFlow<String> =
+        preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DARK")
 
-    val activeVoucher: StateFlow<VoucherEntity?> = container.repository.activeVoucher
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    val queuedVouchers: StateFlow<List<VoucherEntity>> = container.repository.queuedVouchers
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allNetworks: StateFlow<List<NetworkEntity>> = container.repository.allNetworks
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val recentLogs: StateFlow<List<ConnectionLogEntity>> = container.repository.recentLogs
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val preferences: StateFlow<UserPreferencesState> = container.preferencesRepository.preferencesFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserPreferencesState())
-
-    private val _portalUiState = MutableStateFlow(PortalUiState())
-    val portalUiState: StateFlow<PortalUiState> = _portalUiState.asStateFlow()
-
-    private var pingJob: Job? = null
-    private var lastSyncedGateway: String = ""
+    private val _portalSession = MutableStateFlow(PortalSessionState())
+    val portalSession: StateFlow<PortalSessionState> = _portalSession.asStateFlow()
 
     init {
-        container.wifiRadarEngine.startRadar()
-        startContinuousTelemetryLoop()
+        refreshEverything()
     }
 
-    private fun startContinuousTelemetryLoop() {
-        pingJob?.cancel()
-        pingJob = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive) {
-                container.wifiRadarEngine.refreshSnapshot()
-                val current = wifiTelemetry.value
-                if (current.isWifiConnected && current.gatewayIp.isNotBlank()) {
-                    container.wifiRadarEngine.measureDualPing(current.gatewayIp)
-                    if (current.ssid.isNotBlank() && current.ssid != "غير متصل بالواي فاي") {
-                        val existing = container.repository.getNetworkBySsid(current.ssid)
-                        if (existing == null) {
-                            container.repository.saveNetwork(
-                                NetworkEntity(
-                                    ssid = current.ssid,
-                                    gatewayIp = current.gatewayIp,
-                                    loginUrl = "http://${current.gatewayIp}/login",
-                                    statusUrl = "http://${current.gatewayIp}/status",
-                                    logoutUrl = "http://${current.gatewayIp}/logout"
-                                )
-                            )
-                        } else if (existing.gatewayIp != current.gatewayIp) {
-                            container.repository.saveNetwork(
-                                existing.copy(
-                                    gatewayIp = current.gatewayIp,
-                                    loginUrl = "http://${current.gatewayIp}/login",
-                                    statusUrl = "http://${current.gatewayIp}/status",
-                                    logoutUrl = "http://${current.gatewayIp}/logout"
-                                )
-                            )
-                        }
-                    }
-                    if (lastSyncedGateway != current.gatewayIp) {
-                        lastSyncedGateway = current.gatewayIp
-                        syncLiveMikroTikSession(silent = true)
-                    }
-                }
-                delay(6000)
-            }
-        }
-    }
-
-    fun syncLiveMikroTikSession(silent: Boolean = false) {
-        val snap = wifiTelemetry.value
-        val gateway = snap.gatewayIp
-        if (gateway.isBlank()) {
-            if (!silent) {
-                _portalUiState.value = _portalUiState.value.copy(
-                    statusBannerMessage = "يرجى الاتصال بشبكة واي فاي لاكتشاف بوابة المايكروتك تلقائياً."
-                )
-            }
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            _portalUiState.value = _portalUiState.value.copy(isProbingSession = true)
-            val result = container.captivePortalProber.probeAndSyncSession(gateway)
-            val parsed = result.parsedState
-
-            if (parsed != null && (parsed.isLoggedIn || parsed.activeUsername != null || parsed.remainingMb != null || parsed.remainingTimeText != null)) {
-                val mbText = parsed.remainingMb?.let { String.format("%.1f MB", it) } ?: "مفتوح / غير محدد"
-                val timeText = parsed.remainingTimeText ?: "مفتوح"
-
-                var currentActive = activeVoucher.value
-                val detectedCode = parsed.activeUsername
-                if (!detectedCode.isNullOrBlank()) {
-                    val matched = allVouchers.value.firstOrNull { it.code == detectedCode }
-                    if (matched != null) {
-                        container.repository.activateVoucher(matched)
-                        currentActive = matched
-                    } else if (currentActive == null) {
-                        val id = container.repository.addVoucher(
-                            code = detectedCode,
-                            ssid = snap.ssid,
-                            categoryLabel = "جلسة مكتشفة تلقائياً",
-                            initialMb = parsed.remainingMb ?: 0.0
-                        )
-                        val newlyAdded = VoucherEntity(
-                            id = id,
-                            code = detectedCode,
-                            ssid = snap.ssid,
-                            categoryLabel = "جلسة مكتشفة تلقائياً",
-                            status = VoucherStatus.ACTIVE,
-                            remainingMb = parsed.remainingMb,
-                            remainingTimeSeconds = parsed.remainingTimeSeconds
-                        )
-                        container.repository.activateVoucher(newlyAdded)
-                        currentActive = newlyAdded
-                    }
-                }
-
-                if (currentActive != null) {
-                    container.repository.updateActiveVoucherTelemetry(
-                        voucherId = currentActive.id,
-                        remainingMb = parsed.remainingMb,
-                        remainingTime = parsed.remainingTimeText
+    fun refreshEverything() {
+        viewModelScope.launch {
+            _portalSession.update { it.copy(isProbing = true, statusMessage = "جاري فحص الشبكة والبوابة الحقيقية...") }
+            val liveWifi = wifiRadar.refreshNow()
+            if (!liveWifi.isConnectedToWifi || liveWifi.gatewayIp.isBlank()) {
+                _portalSession.update {
+                    it.copy(
+                        isProbing = false,
+                        isInternetReachable = false,
+                        statusMessage = "غير متصل بشبكة Wi-Fi حالياً"
                     )
-                }
-
-                container.notificationHelper.showLiveSessionNotification(
-                    ssid = snap.ssid,
-                    voucherCode = detectedCode ?: currentActive?.code ?: "متصل",
-                    remainingMbText = mbText,
-                    remainingTimeText = timeText
-                )
-                KrotySmartWidgetProvider.updateAllWidgets(
-                    context = appContext,
-                    ssid = snap.ssid,
-                    voucherCode = detectedCode ?: currentActive?.code ?: "متصل",
-                    balanceText = "$mbText • $timeText"
-                )
-
-                _portalUiState.value = _portalUiState.value.copy(
-                    isProbingSession = false,
-                    liveRemainingMb = mbText,
-                    liveRemainingTime = timeText,
-                    statusBannerMessage = "تمت مزامنة الجلسة الحية من البوابة ($gateway)"
-                )
-            } else {
-                _portalUiState.value = _portalUiState.value.copy(
-                    isProbingSession = false,
-                    statusBannerMessage = if (silent) null else "تم فحص البوابة ($gateway): بانتظار تسجيل الدخول بالكرت."
-                )
-            }
-        }
-    }
-
-    fun openRealPortal(
-        targetPath: String = "/status",
-        autoLoginVoucher: VoucherEntity? = null,
-        enableTouchToLearn: Boolean = false
-    ) {
-        val snap = wifiTelemetry.value
-        val gateway = snap.gatewayIp.ifBlank {
-            allNetworks.value.firstOrNull { it.ssid == snap.ssid }?.gatewayIp ?: ""
-        }
-        if (gateway.isBlank()) {
-            _portalUiState.value = _portalUiState.value.copy(
-                statusBannerMessage = "لا توجد بوابة شبكة نشطة حالياً. تأكد من اتصالك بالواي فاي."
-            )
-            return
-        }
-
-        val hostToUse = _portalUiState.value.activePortalHost.ifBlank { gateway }
-        val normalizedPath = if (targetPath.startsWith("http")) {
-            targetPath
-        } else if (targetPath.startsWith("/")) {
-            "http://$hostToUse$targetPath"
-        } else {
-            "http://$hostToUse/$targetPath"
-        }
-
-        _portalUiState.value = _portalUiState.value.copy(
-            isPortalDialogOpen = true,
-            currentPortalUrl = normalizedPath,
-            activePortalHost = hostToUse,
-            pendingAutoLoginCode = autoLoginVoucher?.code,
-            pendingAutoLoginPassword = autoLoginVoucher?.password ?: "",
-            touchToLearnMode = enableTouchToLearn
-        )
-    }
-
-    fun updateActivePortalHost(host: String) {
-        if (host.isNotBlank() && !host.contains("gstatic") && !host.contains("neverssl")) {
-            _portalUiState.value = _portalUiState.value.copy(activePortalHost = host)
-        }
-    }
-
-    fun setPendingAutoLoginCode(code: String) {
-        _portalUiState.value = _portalUiState.value.copy(pendingAutoLoginCode = code.trim())
-    }
-
-    fun toggleTouchToLearnMode(enabled: Boolean) {
-        _portalUiState.value = _portalUiState.value.copy(touchToLearnMode = enabled)
-    }
-
-    fun closePortalDialog() {
-        container.wifiRadarEngine.unbindProcess()
-        _portalUiState.value = _portalUiState.value.copy(
-            isPortalDialogOpen = false,
-            pendingAutoLoginCode = null,
-            touchToLearnMode = false
-        )
-    }
-
-    fun bindWifiForPortal() {
-        container.wifiRadarEngine.bindProcessToWifi()
-    }
-
-    fun onWebViewHtmlExtracted(url: String, html: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val parsed = container.balanceParser.parsePortalHtml(html)
-            val snap = wifiTelemetry.value
-
-            if (parsed.errorType != MikroTikErrorType.NONE && parsed.arabicErrorMessage != null) {
-                _portalUiState.value = _portalUiState.value.copy(
-                    statusBannerMessage = parsed.arabicErrorMessage
-                )
-                container.repository.logEvent(
-                    ssid = snap.ssid,
-                    bssid = snap.bssid,
-                    voucherCode = _portalUiState.value.pendingAutoLoginCode ?: activeVoucher.value?.code ?: "",
-                    eventType = "PORTAL_ERROR",
-                    details = parsed.arabicErrorMessage
-                )
-
-                if (parsed.errorType == MikroTikErrorType.TRAFFIC_LIMIT_REACHED ||
-                    parsed.errorType == MikroTikErrorType.UPTIME_LIMIT_REACHED
-                ) {
-                    activeVoucher.value?.let { exhausted ->
-                        container.repository.markVoucherStatus(exhausted.id, VoucherStatus.EXHAUSTED)
-                    }
-                    val nextInQueue = queuedVouchers.value.firstOrNull()
-                    if (nextInQueue != null) {
-                        container.repository.activateVoucher(nextInQueue)
-                        _portalUiState.value = _portalUiState.value.copy(
-                            pendingAutoLoginCode = nextInQueue.code,
-                            pendingAutoLoginPassword = nextInQueue.password,
-                            statusBannerMessage = "انتهى الكرت الحالي. جاري التحويل التلقائي للكرت الاحتياطي: ${nextInQueue.code}"
-                        )
-                    }
                 }
                 return@launch
             }
 
-            if (parsed.isLoggedIn || parsed.remainingMb != null || parsed.remainingTimeText != null || url.contains("/status")) {
-                val mbText = parsed.remainingMb?.let { String.format("%.1f MB", it) }
-                    ?: _portalUiState.value.liveRemainingMb
-                val timeText = parsed.remainingTimeText ?: _portalUiState.value.liveRemainingTime
+            repository.recordAccessPoint(liveWifi.bssid, liveWifi.ssid, liveWifi.rssiDbm)
+            wifiRadar.runDualPing()
 
-                val codeToActivate = parsed.activeUsername
-                    ?: _portalUiState.value.pendingAutoLoginCode
-                    ?: activeVoucher.value?.code
+            val probeResult = portalProber.probeCurrentNetwork()
+            val dynamicNet = repository.getOrUpdateDynamicNetwork(
+                rawSsid = liveWifi.ssid,
+                gatewayIp = liveWifi.gatewayIp,
+                discoveredLoginUrl = probeResult.discoveredLoginUrl
+            )
 
-                if (!codeToActivate.isNullOrBlank()) {
-                    val existing = allVouchers.value.firstOrNull { it.code == codeToActivate }
-                    if (existing != null) {
-                        container.repository.activateVoucher(existing)
-                        container.repository.updateActiveVoucherTelemetry(
-                            voucherId = existing.id,
-                            remainingMb = parsed.remainingMb,
-                            remainingTime = parsed.remainingTimeText
-                        )
-                    }
+            val liveStatus = probeResult.liveStatus
+            if (liveStatus != null && (liveStatus.remainingMegabytes != null || liveStatus.activeUsername != null || liveStatus.isLoggedInStatusPage)) {
+                repository.syncLivePortalSession(
+                    detectedUsername = liveStatus.activeUsername,
+                    remainingMb = liveStatus.remainingMegabytes,
+                    remainingSec = liveStatus.remainingTimeSeconds,
+                    networkSsid = liveWifi.ssid
+                )
+                val msg = buildString {
+                    append("متصل بالبوابة (${liveWifi.gatewayIp})")
+                    liveStatus.activeUsername?.let { append(" • الكرت: $it") }
+                    liveStatus.remainingMegabytes?.let { append(" • المتبقي: ${String.format("%.1f", it)} MB") }
                 }
-
-                _portalUiState.value = _portalUiState.value.copy(
-                    liveRemainingMb = mbText,
-                    liveRemainingTime = timeText,
-                    pendingAutoLoginCode = null,
-                    statusBannerMessage = "متصل بنجاح • الرصيد: $mbText • الوقت: $timeText"
-                )
-
-                container.notificationHelper.showLiveSessionNotification(
-                    ssid = snap.ssid,
-                    voucherCode = codeToActivate ?: "متصل",
-                    remainingMbText = mbText,
-                    remainingTimeText = timeText
-                )
-                KrotySmartWidgetProvider.updateAllWidgets(
-                    context = appContext,
-                    ssid = snap.ssid,
-                    voucherCode = codeToActivate ?: "متصل",
-                    balanceText = "$mbText • $timeText"
-                )
-            }
-        }
-    }
-
-    fun saveCustomFieldSelector(selector: String) {
-        val snap = wifiTelemetry.value
-        if (snap.ssid.isBlank()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val net = container.repository.getNetworkBySsid(snap.ssid)
-            if (net != null) {
-                container.repository.saveNetwork(net.copy(voucherFieldSelector = selector))
-            } else {
-                container.repository.saveNetwork(
-                    NetworkEntity(
-                        ssid = snap.ssid,
-                        gatewayIp = snap.gatewayIp,
-                        loginUrl = "http://${snap.gatewayIp}/login",
-                        statusUrl = "http://${snap.gatewayIp}/status",
-                        logoutUrl = "http://${snap.gatewayIp}/logout",
-                        voucherFieldSelector = selector
+                _portalSession.update {
+                    it.copy(
+                        currentNetwork = dynamicNet,
+                        isProbing = false,
+                        isInternetReachable = true,
+                        statusMessage = msg
                     )
-                )
-            }
-            _portalUiState.value = _portalUiState.value.copy(
-                touchToLearnMode = false,
-                statusBannerMessage = "تم حفظ حقل الكرت المخصص للشبكة (${snap.ssid}): $selector"
-            )
-        }
-    }
-
-    fun freezeActiveSessionNow() {
-        val snap = wifiTelemetry.value
-        val gateway = _portalUiState.value.activePortalHost.ifBlank { snap.gatewayIp }
-        if (gateway.isBlank()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = container.captivePortalProber.executeLogoutFreeze(gateway)
-            _portalUiState.value = _portalUiState.value.copy(
-                statusBannerMessage = if (ok) {
-                    "تم تجميد الجلسة وتسجيل الخروج المؤقت (/logout) لحفظ رصيد الكرت."
-                } else {
-                    "تعذر الوصول لرابط الخروج المباشر، جرب فتح البوابة والضغط على تجميد الكرت."
                 }
-            )
-            container.repository.logEvent(
-                ssid = snap.ssid,
-                bssid = snap.bssid,
-                voucherCode = activeVoucher.value?.code ?: "",
-                eventType = "FREEZE_LOGOUT",
-                details = "Logout freeze executed on $gateway (success=$ok)"
-            )
+            } else {
+                _portalSession.update {
+                    it.copy(
+                        currentNetwork = dynamicNet,
+                        isProbing = false,
+                        isInternetReachable = probeResult.isInternetActive,
+                        statusMessage = "تم اكتشاف البوابة (${liveWifi.gatewayIp}) — جاهز لتسجيل الدخول أو قراءة الرصيد"
+                    )
+                }
+            }
+            KrotySmartWidgetProvider.updateAllWidgets(appContext)
         }
     }
 
     fun saveAndConnectVoucher(
         code: String,
         password: String = "",
-        categoryLabel: String = "كرت فوري",
-        priceRials: Double = 0.0,
-        initialMb: Double = 0.0,
+        price: Double? = null,
+        quotaMb: Long? = null,
         connectImmediately: Boolean = true
     ) {
         val cleanCode = code.trim()
-        if (cleanCode.isBlank()) return
-        val snap = wifiTelemetry.value
-        viewModelScope.launch(Dispatchers.IO) {
-            val id = container.repository.addVoucher(
+        if (cleanCode.isEmpty()) return
+        viewModelScope.launch {
+            val ssid = wifiState.value.ssid
+            val voucher = repository.addOrActivateVoucher(
                 code = cleanCode,
                 password = password,
-                ssid = snap.ssid.ifBlank { "عام" },
-                categoryLabel = categoryLabel,
-                priceRials = priceRials,
-                initialMb = initialMb
+                price = price,
+                quotaMb = quotaMb,
+                networkSsid = ssid,
+                activateImmediately = connectImmediately
             )
-            val entity = VoucherEntity(
-                id = id,
+            repository.logEvent(
+                ssid = ssid,
                 code = cleanCode,
-                password = password,
-                ssid = snap.ssid.ifBlank { "عام" },
-                categoryLabel = categoryLabel,
-                priceRials = priceRials,
-                initialMb = initialMb,
-                remainingMb = if (initialMb > 0) initialMb else null,
-                status = if (connectImmediately) VoucherStatus.ACTIVE else VoucherStatus.NEW
+                type = if (connectImmediately) "VOUCHER_CONNECT" else "VOUCHER_SAVED",
+                messageAr = if (connectImmediately) "جاري الدخول بالكرت $cleanCode في بوابة الشبكة" else "تم حفظ الكرت $cleanCode في المحفظة"
             )
             if (connectImmediately) {
-                container.repository.activateVoucher(entity)
-                openRealPortal(targetPath = "/login", autoLoginVoucher = entity)
-            } else {
-                _portalUiState.value = _portalUiState.value.copy(
-                    statusBannerMessage = "تم حفظ الكرت ($cleanCode) في المحفظة بنجاح."
+                _portalSession.update {
+                    it.copy(
+                        pendingAutoLoginCode = voucher.code,
+                        openWebPortalAutomatically = true,
+                        statusMessage = "جاري فتح البوابة وحقن الكرت ${voucher.code}..."
+                    )
+                }
+            }
+            KrotySmartWidgetProvider.updateAllWidgets(appContext)
+        }
+    }
+
+    fun clearPendingAutoLogin() {
+        _portalSession.update { it.copy(pendingAutoLoginCode = null, openWebPortalAutomatically = false) }
+    }
+
+    fun onWebPortalHtmlScraped(url: String, html: String) {
+        viewModelScope.launch {
+            val parsed = BalanceAndErrorParser.parseStatusOrLoginHtml(url, html)
+            val ssid = wifiState.value.ssid
+            if (parsed.errorState != null && parsed.errorMessageAr != null) {
+                _portalSession.update { it.copy(statusMessage = parsed.errorMessageAr) }
+                val active = repository.getActiveVoucherNow()
+                if (active != null && (parsed.errorState == "EXPIRED_DATA" || parsed.errorState == "EXPIRED_TIME" || parsed.errorState == "INVALID")) {
+                    repository.updateVoucherStatus(active, parsed.errorState)
+                    repository.logEvent(ssid, active.code, parsed.errorState, parsed.errorMessageAr)
+                    triggerAutoFailoverIfAvailable()
+                }
+                return@launch
+            }
+
+            if (parsed.isLoggedInStatusPage || parsed.remainingMegabytes != null || parsed.activeUsername != null) {
+                repository.syncLivePortalSession(
+                    detectedUsername = parsed.activeUsername,
+                    remainingMb = parsed.remainingMegabytes,
+                    remainingSec = parsed.remainingTimeSeconds,
+                    networkSsid = ssid
+                )
+                val mbStr = parsed.remainingMegabytes?.let { "${String.format("%.1f", it)} MB" } ?: "متصل"
+                _portalSession.update {
+                    it.copy(
+                        isInternetReachable = true,
+                        statusMessage = "تم تحديث الجلسة من البوابة بنجاح ($mbStr)"
+                    )
+                }
+                KrotySmartWidgetProvider.updateAllWidgets(appContext)
+            }
+        }
+    }
+
+    fun saveLearnedInputSelector(selector: String) {
+        viewModelScope.launch {
+            val net = _portalSession.value.currentNetwork ?: return@launch
+            val updated = net.copy(learnedInputSelector = selector)
+            repository.saveNetwork(updated)
+            _portalSession.update {
+                it.copy(
+                    currentNetwork = updated,
+                    statusMessage = "✅ تم حفظ مربع إدخال الكرت ($selector) لهذه الشبكة!"
                 )
             }
         }
     }
 
-    fun activateAndConnectFromWallet(voucher: VoucherEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            container.repository.activateVoucher(voucher)
-            openRealPortal(targetPath = "/login", autoLoginVoucher = voucher)
+    fun saveDetectedCardLength(maxLength: Int) {
+        viewModelScope.launch {
+            val net = _portalSession.value.currentNetwork ?: return@launch
+            if (net.expectedCardLength == null && maxLength in 4..20) {
+                val updated = net.copy(expectedCardLength = maxLength)
+                repository.saveNetwork(updated)
+                _portalSession.update { it.copy(currentNetwork = updated) }
+            }
+        }
+    }
+
+    fun freezeActiveVoucher() {
+        viewModelScope.launch {
+            val gw = wifiState.value.gatewayIp
+            val logoutUrl = _portalSession.value.currentNetwork?.logoutUrl
+                ?: if (gw.isNotBlank()) "http://$gw/logout" else ""
+            if (logoutUrl.isNotBlank()) {
+                portalProber.sendLogoutRequest(logoutUrl)
+            }
+            val active = repository.getActiveVoucherNow()
+            if (active != null) {
+                repository.updateVoucherStatus(active, "PAUSED")
+                repository.logEvent(wifiState.value.ssid, active.code, "CARD_FROZEN", "تم تجميد الكرت وتسجيل الخروج المؤقت من البوابة")
+            }
+            _portalSession.update { it.copy(statusMessage = "❄️ تم تجميد الكرت وإرسال أمر الخروج للبوابة") }
+            KrotySmartWidgetProvider.updateAllWidgets(appContext)
+        }
+    }
+
+    fun triggerAutoFailoverIfAvailable() {
+        viewModelScope.launch {
+            val nextVoucher = repository.getNextQueuedVoucher()
+            if (nextVoucher != null) {
+                repository.updateVoucherStatus(nextVoucher, "ACTIVE")
+                repository.logEvent(
+                    wifiState.value.ssid,
+                    nextVoucher.code,
+                    "AUTO_FAILOVER",
+                    "تم التبديل التلقائي إلى الكرت الاحتياطي ${nextVoucher.code}"
+                )
+                KrotyNotificationHelper.showNotification(
+                    appContext,
+                    4001,
+                    "🔄 تم التبديل التلقائي للكرت الاحتياطي",
+                    "تم تفعيل الكرت الاحتياطي (${nextVoucher.code}) تلقائياً."
+                )
+                _portalSession.update {
+                    it.copy(
+                        pendingAutoLoginCode = nextVoucher.code,
+                        openWebPortalAutomatically = true,
+                        statusMessage = "جاري الدخول التلقائي بالكرت الاحتياطي ${nextVoucher.code}..."
+                    )
+                }
+            }
         }
     }
 
     fun deleteVoucher(voucher: VoucherEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            container.repository.deleteVoucher(voucher)
-        }
+        viewModelScope.launch { repository.deleteVoucher(voucher) }
     }
 
-    fun copyVoucherSecurely(code: String) {
-        val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("KrotyVoucher", code))
-        _portalUiState.value = _portalUiState.value.copy(
-            statusBannerMessage = "تم نسخ الكرت ($code) وسيتم مسح الحافظة تلقائياً بعد 60 ثانية للأمان."
-        )
+    fun activateExistingVoucher(voucher: VoucherEntity) {
         viewModelScope.launch {
-            delay(60_000)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                clipboard.clearPrimaryClip()
-            } else {
-                clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+            repository.updateVoucherStatus(voucher, "ACTIVE")
+            _portalSession.update {
+                it.copy(
+                    pendingAutoLoginCode = voucher.code,
+                    openWebPortalAutomatically = true,
+                    statusMessage = "جاري الدخول بالكرت ${voucher.code}..."
+                )
             }
         }
     }
 
-    fun triggerBackgroundWorkerNow() {
-        SmartBalanceWorker.enqueueImmediateSync(appContext)
-        _portalUiState.value = _portalUiState.value.copy(
-            statusBannerMessage = "تم تشغيل عامل فحص الرصيد في الخلفية وتحديث الإشعار والويدجت."
-        )
-    }
-
-    fun exportBackup(uri: Uri) {
+    fun moveVoucherPriority(voucher: VoucherEntity, delta: Int) {
         viewModelScope.launch {
-            val result = container.backupRestoreManager.exportToUri(uri)
-            _portalUiState.value = _portalUiState.value.copy(
-                statusBannerMessage = result.fold(
-                    onSuccess = { count -> "تم تصدير النسخة الاحتياطية بنجاح ($count عنصر)." },
-                    onFailure = { err -> "فشل التصدير: ${err.localizedMessage}" }
-                )
+            val updated = voucher.copy(priorityOrder = (voucher.priorityOrder + delta).coerceAtLeast(0))
+            repository.addOrActivateVoucher(
+                code = updated.code,
+                password = updated.password,
+                price = updated.price,
+                quotaMb = updated.dataQuotaMb,
+                networkSsid = updated.networkSsid,
+                activateImmediately = updated.status == "ACTIVE"
             )
         }
     }
 
-    fun importBackup(uri: Uri) {
+    fun updateNetworkSettings(network: NetworkEntity) {
         viewModelScope.launch {
-            val result = container.backupRestoreManager.importFromUri(uri)
-            _portalUiState.value = _portalUiState.value.copy(
-                statusBannerMessage = result.fold(
-                    onSuccess = { count -> "تم استيراد $count كرت وشبكة بنجاح." },
-                    onFailure = { err -> "فشل الاستيراد: ${err.localizedMessage}" }
-                )
-            )
+            repository.saveNetwork(network)
+            _portalSession.update { it.copy(currentNetwork = network) }
         }
     }
 
-    fun clearBanner() {
-        _portalUiState.value = _portalUiState.value.copy(statusBannerMessage = null)
+    suspend fun exportBackupJson(): String {
+        val nets = repository.getAllNetworksSnapshot()
+        val cards = repository.getAllVouchersSnapshot()
+        return BackupRestoreManager.exportToJson(nets, cards)
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        container.wifiRadarEngine.stopRadar()
+    fun importBackupJson(rawJson: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payload = BackupRestoreManager.importFromJson(rawJson)
+                payload.networks.forEach { repository.saveNetwork(it.copy(id = 0)) }
+                payload.vouchers.forEach {
+                    repository.addOrActivateVoucher(
+                        code = it.code,
+                        password = it.password,
+                        price = it.price,
+                        quotaMb = it.dataQuotaMb,
+                        networkSsid = it.networkSsid,
+                        activateImmediately = false
+                    )
+                }
+                onResult(true, "تم استعادة ${payload.vouchers.size} كرت و ${payload.networks.size} شبكة بنجاح!")
+            } catch (e: Exception) {
+                onResult(false, "فشل استيراد الملف: تأكد من صحة ملف النسخة الاحتياطية")
+            }
+        }
     }
+
+    fun setGhostMode(enabled: Boolean) = viewModelScope.launch { preferences.setGhostMode(enabled) }
+    fun setDataSaver(enabled: Boolean) = viewModelScope.launch { preferences.setDataSaver(enabled) }
+    fun setLowBalanceAlertMb(mb: Int) = viewModelScope.launch { preferences.setLowBalanceAlertMb(mb) }
+    fun setBiometricLock(enabled: Boolean) = viewModelScope.launch { preferences.setBiometricLock(enabled) }
+    fun setThemeMode(mode: String) = viewModelScope.launch { preferences.setThemeMode(mode) }
+    fun clearLogs() = viewModelScope.launch { repository.clearLogs() }
 
     companion object {
-        fun provideFactory(appContext: Context, container: AppContainer): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return KrotyViewModel(appContext, container) as T
-                }
+        fun factory(
+            context: Context,
+            repository: KrotyRepository,
+            preferences: UserPreferencesRepository,
+            wifiRadar: WifiRadarEngine,
+            portalProber: CaptivePortalProber
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return KrotyViewModel(context.applicationContext, repository, preferences, wifiRadar, portalProber) as T
             }
+        }
     }
 }

@@ -1,11 +1,12 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioManager
-import android.media.ToneGenerator
-import android.net.Uri
-import android.util.Size
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -17,11 +18,9 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,36 +31,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.example.domain.scanner.KrotyCameraAnalyzer
 import com.example.ui.KrotyViewModel
-import com.example.ui.theme.*
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.Executors
 
 @Composable
 fun ScannerScreen(
     viewModel: KrotyViewModel,
-    onNavigateToRadar: () -> Unit
+    onConnectedNavigateToRadar: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val appContainer = viewModel.container
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -69,140 +55,44 @@ fun ScannerScreen(
         )
     }
 
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasCameraPermission = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.CAMERA
-                ) == PackageManager.PERMISSION_GRANTED
-            }
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission) {
+            permLauncher.launch(Manifest.permission.CAMERA)
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var scannedCode by remember { mutableStateOf("") }
-    var voucherPassword by remember { mutableStateOf("") }
-    var voucherPrice by remember { mutableStateOf("") }
-    var voucherMb by remember { mutableStateOf("") }
-    var targetLength by remember { mutableIntStateOf(0) }
+    var codeInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
+    var priceInput by remember { mutableStateOf("") }
+    var quotaMbInput by remember { mutableStateOf("") }
+
+    var liveDetectedCode by remember { mutableStateOf("") }
+    var confidence by remember { mutableStateOf(0f) }
+    var selectedLengthLock by remember { mutableStateOf<Int?>(null) }
     var torchEnabled by remember { mutableStateOf(false) }
-    var zoomRatio by remember { mutableFloatStateOf(1.0f) }
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var autoConnectOnConsensus by remember { mutableStateOf(false) }
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
-    var autoConnectOnScan by remember { mutableStateOf(false) }
-    var scanStatusMessage by remember { mutableStateOf<String?>(null) }
-    var isAnalyzingGallery by remember { mutableStateOf(false) }
-    var cameraRebindKey by remember { mutableIntStateOf(0) }
+    var statusBanner by remember { mutableStateOf("وجّه الكاميرا الحقيقية نحو أرقام الكرت أو الباركود") }
 
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-
-    val krotyAnalyzer = remember {
-        KrotyCameraAnalyzer(
-            ocrParser = appContainer.ocrParser,
-            consensusTracker = appContainer.consensusTracker,
-            onVoucherLocked = { lockedCode ->
-                if (scannedCode != lockedCode) {
-                    scannedCode = lockedCode
-                    scanStatusMessage = "✅ تم التقاط رقم الكرت بالكاميرا: $lockedCode"
-                    try {
-                        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                            .startTone(ToneGenerator.TONE_PROP_BEEP, 120)
-                    } catch (_: Exception) {}
-
-                    if (autoConnectOnScan) {
-                        viewModel.saveAndConnectVoucher(
-                            code = lockedCode,
-                            connectImmediately = true
-                        )
-                        onNavigateToRadar()
-                    }
-                }
-            }
-        )
-    }
-
-    LaunchedEffect(targetLength) {
-        krotyAnalyzer.targetCodeLength = targetLength
-        appContainer.consensusTracker.reset()
-    }
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            isAnalyzingGallery = true
-            scanStatusMessage = "⏳ جاري قراءة صورة الكرت من المعرض بالذكاء الاصطناعي..."
-            try {
-                val inputImage = InputImage.fromFilePath(context, uri)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                val barcodeScanner = BarcodeScanning.getClient()
-
-                barcodeScanner.process(inputImage)
-                    .addOnSuccessListener { barcodes ->
-                        val qr = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
-                        if (!qr.isNullOrBlank()) {
-                            val cleaned = qr.trim()
-                            scannedCode = cleaned
-                            isAnalyzingGallery = false
-                            scanStatusMessage = "✅ تم استخراج الكود من باركود الصورة: $cleaned"
-                            if (autoConnectOnScan) {
-                                viewModel.saveAndConnectVoucher(code = cleaned, connectImmediately = true)
-                                onNavigateToRadar()
-                            }
-                        } else {
-                            recognizer.process(inputImage)
-                                .addOnSuccessListener { visionText ->
-                                    val best = appContainer.ocrParser.extractBestCandidate(
-                                        visionText = visionText,
-                                        targetLength = targetLength,
-                                        customRegex = null
-                                    )
-                                    val fallbackCode = if (best == null) {
-                                        val normalized = visionText.text.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1').replace('S', '5').replace('B', '8')
-                                        Regex("\\b\\d{5,16}\\b").findAll(normalized)
-                                            .map { it.value }
-                                            .firstOrNull { candidate ->
-                                                targetLength <= 0 || candidate.length == targetLength
-                                            }
-                                    } else null
-
-                                    val finalCode = best?.code ?: fallbackCode
-                                    isAnalyzingGallery = false
-                                    if (!finalCode.isNullOrBlank()) {
-                                        scannedCode = finalCode
-                                        scanStatusMessage = "✅ تم استخراج رقم الكرت من صورة المعرض: $finalCode"
-                                        try {
-                                            ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                                                .startTone(ToneGenerator.TONE_PROP_BEEP, 120)
-                                        } catch (_: Exception) {}
-                                        if (autoConnectOnScan) {
-                                            viewModel.saveAndConnectVoucher(code = finalCode, connectImmediately = true)
-                                            onNavigateToRadar()
-                                        }
-                                    } else {
-                                        scanStatusMessage = "⚠️ لم يتم العثور على أرقام واضحة في الصورة. جرب تقريب الصورة أو تحديد طول الكرت."
-                                    }
-                                }
-                                .addOnFailureListener {
-                                    isAnalyzingGallery = false
-                                    scanStatusMessage = "❌ تعذر تحليل النص في الصورة المختارة."
-                                }
-                        }
-                    }
-                    .addOnFailureListener {
-                        isAnalyzingGallery = false
-                        scanStatusMessage = "❌ تعذر قراءة الصورة من المعرض."
-                    }
-            } catch (_: Exception) {
-                isAnalyzingGallery = false
-                scanStatusMessage = "❌ حدث خطأ أثناء فتح الصورة من المعرض."
+            statusBanner = "جاري قراءة أرقام الكرت من الصورة..."
+            KrotyCameraAnalyzer.scanGalleryUri(context, uri, selectedLengthLock) { result ->
+                if (result != null) {
+                    codeInput = result.code
+                    liveDetectedCode = result.code
+                    result.detectedPrice?.let { priceInput = it.toInt().toString() }
+                    result.detectedQuotaMb?.let { quotaMbInput = it.toString() }
+                    statusBanner = "✅ تم استخراج الكرت (${result.code}) من الصورة بنجاح!"
+                    vibratePhone(context)
+                } else {
+                    statusBanner = "⚠️ لم يتم العثور على رقم كرت واضح في الصورة المختارة"
+                }
             }
         }
     }
@@ -210,439 +100,292 @@ fun ScannerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(KrotyDarkBg)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Live Camera & AI Scanner Card
+        // Real Live CameraX Card
         Card(
-            colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                // Header Row with weight(1f) so buttons NEVER get pushed off-screen!
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            Icons.Default.QrCodeScanner,
-                            contentDescription = null,
-                            tint = KrotyCyan,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "الماسح الذكي للكروت (AI Camera)",
-                            color = KrotyCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            appContainer.consensusTracker.reset()
-                            cameraRebindKey++
-                        },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "إعادة تنشيط الكاميرا",
-                            tint = KrotyTextSecondary
-                        )
+                    Text("الماسح الذكي للكروت", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Row {
+                        IconButton(onClick = {
+                            torchEnabled = !torchEnabled
+                            cameraRef?.cameraControl?.enableTorch(torchEnabled)
+                        }) {
+                            Icon(
+                                imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                                contentDescription = "الفلاش",
+                                tint = if (torchEnabled) Color(0xFFFBBF24) else Color.White
+                            )
+                        }
+                        IconButton(onClick = { galleryLauncher.launch("image/*") }) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = "صورة من المعرض", tint = Color(0xFF38BDF8))
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Camera Viewfinder Box (Uses COMPATIBLE TextureView for 100% Xiaomi/Android reliability)
+                // Live CameraX PreviewView Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(235.dp)
+                        .height(230.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color.Black)
-                        .border(2.dp, KrotyCyan.copy(alpha = 0.7f), RoundedCornerShape(16.dp)),
+                        .border(2.dp, Color(0xFF38BDF8), RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (hasCameraPermission) {
-                        key(cameraRebindKey) {
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    val previewView = PreviewView(ctx).apply {
-                                        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                                    }
-                                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                                    cameraProviderFuture.addListener({
-                                        try {
-                                            val cameraProvider = cameraProviderFuture.get()
-                                            val preview = Preview.Builder().build().also {
-                                                it.setSurfaceProvider(previewView.surfaceProvider)
-                                            }
-                                            val imageAnalysis = ImageAnalysis.Builder()
-                                                .setTargetResolution(Size(1280, 720))
-                                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                                .build()
-                                                .also {
-                                                    it.setAnalyzer(cameraExecutor, krotyAnalyzer)
-                                                }
-
-                                            cameraProvider.unbindAll()
-                                            val cam = cameraProvider.bindToLifecycle(
-                                                lifecycleOwner,
-                                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                                preview,
-                                                imageAnalysis
-                                            )
-                                            cameraRef = cam
-                                        } catch (_: Exception) {
-                                        }
-                                    }, ContextCompat.getMainExecutor(ctx))
-                                    previewView
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER }.apply {
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                    scaleType = PreviewView.ScaleType.FILL_CENTER
                                 }
-                            )
-                        }
+                                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                                val executor = Executors.newSingleThreadExecutor()
 
-                        // Target Reticle Box
+                                cameraProviderFuture.addListener({
+                                    try {
+                                        val cameraProvider = cameraProviderFuture.get()
+                                        val preview = Preview.Builder().build().also {
+                                            it.setSurfaceProvider(previewView.surfaceProvider)
+                                        }
+                                        val analyzer = KrotyCameraAnalyzer(
+                                            getExpectedLength = { selectedLengthLock },
+                                            isNumericOnly = { true },
+                                            onLiveCandidate = { candidate, prog, confirmed ->
+                                                liveDetectedCode = candidate.code
+                                                confidence = prog
+                                                if (confirmed && codeInput != candidate.code) {
+                                                    codeInput = candidate.code
+                                                    candidate.detectedPrice?.let { priceInput = it.toInt().toString() }
+                                                    candidate.detectedQuotaMb?.let { quotaMbInput = it.toString() }
+                                                    statusBanner = "✅ تم التقاط رقم الكرت الحقيقي: ${candidate.code}"
+                                                    vibratePhone(ctx)
+                                                    if (autoConnectOnConsensus) {
+                                                        viewModel.saveAndConnectVoucher(
+                                                            code = candidate.code,
+                                                            password = passwordInput,
+                                                            price = priceInput.toDoubleOrNull(),
+                                                            quotaMb = quotaMbInput.toLongOrNull(),
+                                                            connectImmediately = true
+                                                        )
+                                                        onConnectedNavigateToRadar()
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        val imageAnalysis = ImageAnalysis.Builder()
+                                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                            .build()
+                                            .also { it.setAnalyzer(executor, analyzer) }
+
+                                        cameraProvider.unbindAll()
+                                        cameraRef = cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            preview,
+                                            imageAnalysis
+                                        )
+                                    } catch (_: Exception) {}
+                                }, ContextCompat.getMainExecutor(ctx))
+
+                                previewView
+                            }
+                        )
+
+                        // Target ROI Frame Overlay
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.84f)
-                                .height(88.dp)
-                                .border(2.dp, KrotyEmerald, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.92f)
-                                    .height(1.5.dp)
-                                    .background(KrotyCyan.copy(alpha = 0.65f))
-                            )
-                        }
+                                .fillMaxWidth(0.82f)
+                                .height(95.dp)
+                                .border(2.dp, Color(0xFF10B981), RoundedCornerShape(12.dp))
+                        )
 
+                        // Live Detected Overlay Badge at Bottom of Camera
                         Surface(
-                            color = KrotyDarkBg.copy(alpha = 0.78f),
-                            shape = RoundedCornerShape(50),
+                            color = Color(0xCC0F172A),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 10.dp)
+                                .padding(8.dp)
                         ) {
                             Text(
-                                text = "وجّه الكاميرا نحو أرقام الكرت أو الباركود",
-                                color = KrotyCyan,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                                text = if (liveDetectedCode.isNotBlank())
+                                    "الملتقط: $liveDetectedCode (${(confidence * 100).toInt()}%)"
+                                else statusBanner,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
                     } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(20.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.CameraAlt,
-                                contentDescription = null,
-                                tint = KrotyAmber,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                "صلاحية الكاميرا مطلوبة لتشغيل الماسح الضوئي الحي",
-                                color = KrotyTextPrimary,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                                colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan)
-                            ) {
-                                Text("تفعيل الكاميرا الآن", color = KrotyDarkBg, fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("يرجى منح صلاحية الكاميرا لتشغيل الماسح الحقيقي", color = Color.White, fontSize = 13.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { permLauncher.launch(Manifest.permission.CAMERA) }) {
+                                Text("منح صلاحية الكاميرا الآن")
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // PROMINENT FLASH & GALLERY CONTROL BAR (Clear Arabic Buttons + Icons!)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            val newState = !torchEnabled
-                            torchEnabled = newState
-                            cameraRef?.cameraControl?.enableTorch(newState)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (torchEnabled) KrotyAmber else Color(0xFF1F2E4D)
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                            contentDescription = "الفلاش",
-                            tint = if (torchEnabled) KrotyDarkBg else KrotyAmber
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (torchEnabled) "إطفاء الفلاش" else "تشغيل الفلاش",
-                            color = if (torchEnabled) KrotyDarkBg else KrotyTextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    Button(
-                        onClick = { galleryLauncher.launch("image/*") },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF1A3648)
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                    ) {
-                        if (isAnalyzingGallery) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = KrotyCyan,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PhotoLibrary,
-                                contentDescription = "المعرض",
-                                tint = KrotyCyan
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "صورة من المعرض",
-                            color = KrotyCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-
-                // Status feedback banner for camera / gallery OCR
-                scanStatusMessage?.let { statusMsg ->
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Surface(
-                        color = Color(0xFF0E2238),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, KrotyCyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                    ) {
-                        Text(
-                            text = statusMsg,
-                            color = KrotyEmerald,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
                 // Zoom Slider
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "تقريب العدسة: ${String.format("%.1fx", zoomRatio)}",
-                        color = KrotyTextSecondary,
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("تقريب العدسة: ${String.format("%.1fx", zoomRatio)}", fontSize = 12.sp, color = Color.Gray)
                     Slider(
                         value = zoomRatio,
                         onValueChange = {
                             zoomRatio = it
                             cameraRef?.cameraControl?.setZoomRatio(it)
                         },
-                        valueRange = 1.0f..3.0f,
-                        modifier = Modifier.weight(1f)
+                        valueRange = 1f..3f,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                     )
                 }
 
-                // Length Filter Chips inside LazyRow so "12 رقم" NEVER wraps vertically!
-                val lengthOptions = listOf(0, 6, 8, 10, 12)
-                LazyRow(
+                // Length Filter Chips
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(lengthOptions) { len ->
+                    val lengths = listOf(null to "تلقائي", 6 to "6 أرقام", 8 to "8 أرقام", 10 to "10 أرقام", 12 to "12 رقم")
+                    for ((len, label) in lengths) {
                         FilterChip(
-                            selected = targetLength == len,
-                            onClick = { targetLength = len },
-                            label = {
-                                Text(
-                                    text = if (len == 0) "تلقائي (كل الأطوال)" else "$len أرقام",
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
-                            }
+                            selected = selectedLengthLock == len,
+                            onClick = { selectedLengthLock = len },
+                            label = { Text(label, fontSize = 11.sp) }
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
+                // Auto-Connect Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "الاتصال التلقائي بالبوابة فور التقاط الكرت ⚡",
-                        color = KrotyTextPrimary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = autoConnectOnScan,
-                        onCheckedChange = { autoConnectOnScan = it }
-                    )
+                    Text("الاتصال التلقائي بالبوابة فور التقاط الكرت ⚡", fontSize = 13.sp)
+                    Switch(checked = autoConnectOnConsensus, onCheckedChange = { autoConnectOnConsensus = it })
                 }
             }
         }
 
-        // 2. Extracted Voucher & Instant Execution Card
+        // Extracted / Manual Voucher Form Card
         Card(
-            colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "بيانات الكرت المستخرج والتنفيذ الفوري",
-                    color = KrotyTextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("بيانات الكرت المستخرج والتنفيذ الفوري", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
                 OutlinedTextField(
-                    value = scannedCode,
-                    onValueChange = { scannedCode = it },
-                    label = { Text("رقم الكرت (يُملأ تلقائياً من الكاميرا أو المعرض أو يدوياً)") },
-                    textStyle = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = KrotyEmerald
-                    ),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = voucherPassword,
-                    onValueChange = { voucherPassword = it },
-                    label = { Text("كلمة المرور (اتركه فارغاً لكروت المايكروتك العادية)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
+                    value = codeInput,
+                    onValueChange = { codeInput = it },
+                    label = { Text("رقم الكرت (يُملأ تلقائياً من الكاميرا أو يدوياً)") },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text("كلمة المرور (اتركه فارغاً لكروت المايكروتك العادية)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
-                        value = voucherPrice,
-                        onValueChange = { voucherPrice = it },
+                        value = priceInput,
+                        onValueChange = { priceInput = it },
                         label = { Text("السعر (اختياري)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                     OutlinedTextField(
-                        value = voucherMb,
-                        onValueChange = { voucherMb = it },
+                        value = quotaMbInput,
+                        onValueChange = { quotaMbInput = it },
                         label = { Text("الباقة MB (اختياري)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = {
-                            viewModel.saveAndConnectVoucher(
-                                code = scannedCode,
-                                password = voucherPassword,
-                                priceRials = voucherPrice.toDoubleOrNull() ?: 0.0,
-                                initialMb = voucherMb.toDoubleOrNull() ?: 0.0,
-                                connectImmediately = true
-                            )
-                            onNavigateToRadar()
+                            if (codeInput.isNotBlank()) {
+                                viewModel.saveAndConnectVoucher(
+                                    code = codeInput,
+                                    password = passwordInput,
+                                    price = priceInput.toDoubleOrNull(),
+                                    quotaMb = quotaMbInput.toLongOrNull(),
+                                    connectImmediately = true
+                                )
+                                onConnectedNavigateToRadar()
+                            } else {
+                                statusBanner = "⚠️ وجّه الكاميرا نحو الكرت أولاً أو اكتب رقم الكرت"
+                            }
                         },
-                        enabled = scannedCode.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = KrotyEmerald),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                     ) {
-                        Icon(Icons.Default.Bolt, contentDescription = null, tint = KrotyDarkBg)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("اتصال فوري بالبوابة", color = KrotyDarkBg, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Bolt, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("اتصال فوري بالبوابة")
                     }
 
                     OutlinedButton(
                         onClick = {
-                            viewModel.saveAndConnectVoucher(
-                                code = scannedCode,
-                                password = voucherPassword,
-                                priceRials = voucherPrice.toDoubleOrNull() ?: 0.0,
-                                initialMb = voucherMb.toDoubleOrNull() ?: 0.0,
-                                connectImmediately = false
-                            )
-                            scannedCode = ""
-                            appContainer.consensusTracker.reset()
+                            if (codeInput.isNotBlank()) {
+                                viewModel.saveAndConnectVoucher(
+                                    code = codeInput,
+                                    password = passwordInput,
+                                    price = priceInput.toDoubleOrNull(),
+                                    quotaMb = quotaMbInput.toLongOrNull(),
+                                    connectImmediately = false
+                                )
+                                statusBanner = "✅ تم حفظ الكرت (${codeInput}) في طابور المحفظة!"
+                                codeInput = ""
+                            }
                         },
-                        enabled = scannedCode.isNotBlank(),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = null, tint = KrotyCyan)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("حفظ في المحفظة", color = KrotyCyan)
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("حفظ في المحفظة")
                     }
                 }
             }
         }
     }
+}
+
+private fun vibratePhone(context: Context) {
+    try {
+        val v = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            v.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            v.vibrate(120)
+        }
+    } catch (_: Exception) {}
 }
