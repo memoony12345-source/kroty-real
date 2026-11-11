@@ -37,8 +37,13 @@ jobs:
                   else:
                       if line.strip() == '""")':
                           os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
+                          file_text = "\n".join(content_lines).strip() + "\n"
+                          file_text = file_text.replace(
+                              "settings.LoadWithOverviewMode = true",
+                              "settings.loadWithOverviewMode = true"
+                          )
                           with open(current_path, "w", encoding="utf-8") as out:
-                              out.write("\n".join(content_lines).strip() + "\n")
+                              out.write(file_text)
                           total_files += 1
                           print(f"[{total_files}] Extracted: {current_path}")
                           current_path = None
