@@ -18,12 +18,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore Working Base and Upgrade Scanner and Portal UI
+      - name: Ensure Standalone Files Exist Without Overwriting Edits
         run: |
           python3 -c '
           import os, re, subprocess
 
-          def extract_bundle(script_text):
+          def extract_missing_only(script_text):
               lines = script_text.splitlines()
               current_path = None
               content_lines = []
@@ -36,11 +36,12 @@ jobs:
                           content_lines = [first_line] if first_line else []
                   else:
                       if line.strip() == "\"\"\")":
-                          os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
-                          file_text = "\n".join(content_lines).strip() + "\n"
-                          with open(current_path, "w", encoding="utf-8") as out:
-                              out.write(file_text)
-                          print("Restored:", current_path)
+                          if not os.path.exists(current_path):
+                              os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
+                              file_text = "\n".join(content_lines).strip() + "\n"
+                              with open(current_path, "w", encoding="utf-8") as out:
+                                  out.write(file_text)
+                              print("Restored missing file:", current_path)
                           current_path = None
                           content_lines = []
                       else:
@@ -55,78 +56,8 @@ jobs:
               commit_hash = subprocess.check_output(cmd, shell=True, text=True).strip()
               if commit_hash:
                   raw_script = subprocess.check_output(["git", "show", f"{commit_hash}:{fn}"], text=True)
-                  extract_bundle(raw_script)
-
-          scanner_path = "app/src/main/java/com/example/ui/screens/ScannerScreen.kt"
-          if os.path.exists(scanner_path):
-              with open(scanner_path, "r", encoding="utf-8") as f:
-                  s = f.read()
-              if "import androidx.compose.foundation.horizontalScroll" not in s:
-                  s = s.replace(
-                      "import androidx.compose.foundation.rememberScrollState",
-                      "import androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.horizontalScroll"
-                  )
-              s = s.replace(
-                  "\"الماسح الحقيقي للكروت (CameraX + ML Kit)\"",
-                  "\"الماسح الذكي للكروت\""
-              )
-              s = s.replace(
-                  "val previewView = PreviewView(ctx)",
-                  "val previewView = PreviewView(ctx).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER }"
-              )
-              bar_lines = [
-                  "Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {",
-                  "    Button(onClick = { val ns = !torchEnabled; torchEnabled = ns; cameraRef?.cameraControl?.enableTorch(ns) }, colors = ButtonDefaults.buttonColors(containerColor = if (torchEnabled) KrotyAmber else KrotyCardBorder), shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).height(46.dp)) {",
-                  "        Icon(imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff, contentDescription = null, tint = if (torchEnabled) KrotyDarkBg else KrotyAmber)",
-                  "        Spacer(modifier = Modifier.width(6.dp))",
-                  "        Text(text = if (torchEnabled) \"إطفاء الفلاش\" else \"تشغيل الفلاش\", color = if (torchEnabled) KrotyDarkBg else KrotyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)",
-                  "    }",
-                  "    Button(onClick = { galleryLauncher.launch(\"image/*\") }, colors = ButtonDefaults.buttonColors(containerColor = KrotyCardBorder), shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).height(46.dp)) {",
-                  "        Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, tint = KrotyCyan)",
-                  "        Spacer(modifier = Modifier.width(6.dp))",
-                  "        Text(text = \"صورة من المعرض\", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)",
-                  "    }",
-                  "}",
-                  "Row("
-              ]
-              s = s.replace("Row(\n                    modifier = Modifier.fillMaxWidth(),\n                    verticalAlignment = Alignment.CenterVertically\n                ) {\n                    Text(\"تقريب العدسة:", "\n".join(bar_lines) + "\n                    modifier = Modifier.fillMaxWidth(),\n                    verticalAlignment = Alignment.CenterVertically\n                ) {\n                    Text(\"تقريب العدسة:")
-              s = s.replace(
-                  "modifier = Modifier.fillMaxWidth(),\n                    horizontalArrangement = Arrangement.spacedBy(6.dp)\n                ) {\n                    lengthOptions.forEach",
-                  "modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),\n                    horizontalArrangement = Arrangement.spacedBy(8.dp)\n                ) {\n                    lengthOptions.forEach"
-              )
-              with open(scanner_path, "w", encoding="utf-8") as f:
-                  f.write(s)
-
-          radar_path = "app/src/main/java/com/example/ui/screens/RadarScreen.kt"
-          if os.path.exists(radar_path):
-              with open(radar_path, "r", encoding="utf-8") as f:
-                  r = f.read()
-              r = r.replace(
-                  "settings.javaScriptEnabled = true\n                            settings.domStorageEnabled = true",
-                  "settings.javaScriptEnabled = true\n                            settings.domStorageEnabled = true\n                            settings.loadWithOverviewMode = true\n                            settings.useWideViewPort = true\n                            settings.builtInZoomControls = true\n                            settings.displayZoomControls = false"
-              )
-              r = r.replace(
-                  "\"بوابة المايكروتك الحقيقية (${telemetry.ssid})\"",
-                  "\"بوابة ${telemetry.ssid} • الرصيد: ${portalState.liveRemainingMb}\""
-              )
-              r = r.replace(
-                  "IconButton(onClick = { viewModel.closePortalDialog() }) {",
-                  "Row { IconButton(onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() }) { Icon(Icons.Default.ArrowForward, contentDescription = null, tint = KrotyTextPrimary) }; IconButton(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = null, tint = KrotyCyan) }; IconButton(onClick = { viewModel.closePortalDialog() }) {"
-              )
-              r = r.replace(
-                  "Icon(Icons.Default.Close, contentDescription = \"إغلاق\", tint = KrotyTextPrimary)\n                        }",
-                  "Icon(Icons.Default.Close, contentDescription = \"إغلاق\", tint = KrotyCoralRed)\n                        } }"
-              )
-              with open(radar_path, "w", encoding="utf-8") as f:
-                  f.write(r)
+                  extract_missing_only(raw_script)
           '
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git rm -f setup_part*.py 2>/dev/null || true
-          git add settings.gradle.kts gradle.properties build.gradle.kts gradle app
-          git commit -m "Finalize standalone files with upgraded Scanner and Portal UI [skip ci]" || true
-          git push || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
