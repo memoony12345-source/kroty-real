@@ -35,14 +35,24 @@ jobs:
                   continue
               with open(script_name, 'r', encoding='utf-8') as f:
                   content = f.read()
-              pattern = re.compile(r'write_file\(\s*"([^"]+)"\s*,\s*r?"""(.*?)"""\s*\)', re.DOTALL)
-              for file_path, file_content in pattern.findall(content):
-                  file_path = file_path.strip()
-                  dir_name = os.path.dirname(file_path)
-                  if dir_name:
-                      os.makedirs(dir_name, exist_ok=True)
-                  with open(file_path, 'w', encoding='utf-8') as out:
-                      out.write(file_content.strip() + '\n')
+              chunks = re.split(r'(?m)^(?=write_file\(|print\()', content)
+              for chunk in chunks:
+                  chunk = chunk.strip()
+                  if not chunk.startswith('write_file('):
+                      continue
+                  m_path = re.search(r'write_file\(\s*"([^"]+)"', chunk)
+                  if not m_path:
+                      continue
+                  file_path = m_path.group(1).strip()
+                  first_q = chunk.find('"""')
+                  last_q = chunk.rfind('"""')
+                  if first_q != -1 and last_q != -1 and last_q > first_q:
+                      file_content = chunk[first_q + 3:last_q]
+                      dir_name = os.path.dirname(file_path)
+                      if dir_name:
+                          os.makedirs(dir_name, exist_ok=True)
+                      with open(file_path, 'w', encoding='utf-8') as out:
+                          out.write(file_content.strip() + '\n')
 
           # 1. Update Top Bar Title in MainActivity.kt to confirm v3.2 installation
           main_act_path = "app/src/main/java/com/example/MainActivity.kt"
@@ -630,20 +640,22 @@ jobs:
               extra_imports = """package com.example.ui.screens
 
           import android.view.View
+          import androidx.compose.foundation.BorderStroke
           import androidx.compose.foundation.background
           import androidx.compose.foundation.border
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.horizontalScroll
           import androidx.compose.foundation.rememberScrollState
           import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.text.font.FontFamily
           import androidx.compose.ui.text.style.TextOverflow
           """
               r_code = r_code.replace("package com.example.ui.screens", extra_imports, 1)
 
-              # Prevent any button/chip text from wrapping vertically letter-by-letter
               r_code = r_code.replace('"يتعلم..."', '"🎯 يتعلم"')
               r_code = re.sub(
                   r'Text\(\s*(if\s*\([^)\n]+\)\s*"[^"\n]+"\s*else\s*"[^"\n]+")\s*\)',
@@ -656,7 +668,6 @@ jobs:
                   r_code
               )
 
-              # Replace AndroidView( in RadarScreen.kt with KrotyCockpitAndroidView(
               r_code = r_code.replace("AndroidView(", "KrotyCockpitAndroidView(")
 
               cockpit_appendix = r'''
@@ -900,7 +911,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "Upgrade to Kroty Pro v3.2: Tab-scoped camera release & Pro Portal Cockpit"
+            git commit -m "Upgrade to Kroty Pro v3.2: Full file extraction & Pro Portal Cockpit"
             git push || true
           fi
 
