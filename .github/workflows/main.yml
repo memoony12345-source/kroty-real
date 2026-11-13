@@ -13,57 +13,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository with Full History
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Force Write Upgraded v3.2 Scanner, Portal Cockpit, and UI Files
+      - name: Apply Kroty Pro v3.2 Surgical Upgrades
         run: |
-          python3 - << 'PYEOF'
-          import os, re, subprocess
+          FIRST_COMMIT=$(git log --reverse --pretty=format:%H -- setup_part3.py | head -n 1)
+          if [ -n "$FIRST_COMMIT" ]; then
+            git show "$FIRST_COMMIT:setup_part1.py" > /tmp/orig_part1.py 2>/dev/null || true
+            git show "$FIRST_COMMIT:setup_part2.py" > /tmp/orig_part2.py 2>/dev/null || true
+            git show "$FIRST_COMMIT:setup_part3.py" > /tmp/orig_part3.py 2>/dev/null || true
+          fi
 
-          # 1. Ensure all 41 base files exist from original working history
-          def extract_missing(script_text):
-              lines = script_text.splitlines()
-              current_path = None
-              content_lines = []
-              for line in lines:
-                  if current_path is None:
-                      m = re.match(r'^\s*write_file\(\s*"([^"]+)"\s*,\s*r?"""(.*)$', line)
-                      if m:
-                          current_path = m.group(1).strip()
-                          first_line = m.group(2)
-                          content_lines = [first_line] if first_line else []
-                  else:
-                      if line.strip() == '""")':
-                          if not os.path.exists(current_path):
-                              os.makedirs(os.path.dirname(current_path) or ".", exist_ok=True)
-                              with open(current_path, "w", encoding="utf-8") as out:
-                                  out.write("\n".join(content_lines).strip() + "\n")
-                          current_path = None
-                          content_lines = []
-                      else:
-                          content_lines.append(line)
+          python3 - << 'EOF'
+          import re, os
 
-          for idx, fn in enumerate(["setup_part1.py", "setup_part2.py", "setup_part3.py"], start=1):
-              cmd = (
-                  f"git log --reverse --pretty=format:%H -- {fn} | head -n 1"
-                  if idx == 3 else
-                  f"git log --diff-filter=AM -n 1 --pretty=format:%H -- {fn}"
-              )
-              commit_hash = subprocess.check_output(cmd, shell=True, text=True).strip()
-              if commit_hash:
-                  raw_script = subprocess.check_output(["git", "show", f"{commit_hash}:{fn}"], text=True)
-                  extract_missing(raw_script)
+          for script_name in ['/tmp/orig_part1.py', '/tmp/orig_part2.py', '/tmp/orig_part3.py']:
+              if not os.path.exists(script_name):
+                  continue
+              with open(script_name, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              pattern = re.compile(r'write_file\(\s*"([^"]+)"\s*,\s*r?"""(.*?)"""\s*\)', re.DOTALL)
+              for file_path, file_content in pattern.findall(content):
+                  file_path = file_path.strip()
+                  dir_name = os.path.dirname(file_path)
+                  if dir_name:
+                      os.makedirs(dir_name, exist_ok=True)
+                  with open(file_path, 'w', encoding='utf-8') as out:
+                      out.write(file_content.strip() + '\n')
 
-          # 2. Force-Overwrite ScannerScreen.kt (Tab-Scoped Camera Lifecycle + Flash/Gallery Bar + LazyRow Chips)
+          # 1. Update Top Bar Title in MainActivity.kt to confirm v3.2 installation
+          main_act_path = "app/src/main/java/com/example/MainActivity.kt"
+          if os.path.exists(main_act_path):
+              with open(main_act_path, "r", encoding="utf-8") as f:
+                  m_code = f.read()
+              m_code = m_code.replace('"كروتي نت (Kroty Net)"', '"كروتي نت • Kroty Pro v3.2"')
+              with open(main_act_path, "w", encoding="utf-8") as f:
+                  f.write(m_code)
+
+          # 2. Write Upgraded ScannerScreen.kt (Tab-scoped camera release + Flash/Gallery bar + LazyRow chips)
           scanner_code = r'''package com.example.ui.screens
 
           import android.Manifest
           import android.content.pm.PackageManager
-          import android.media.AudioManager
-          import android.media.ToneGenerator
           import android.net.Uri
           import android.util.Size
           import android.view.View
@@ -75,15 +69,13 @@ jobs:
           import androidx.camera.core.Preview
           import androidx.camera.lifecycle.ProcessCameraProvider
           import androidx.camera.view.PreviewView
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.Canvas
           import androidx.compose.foundation.background
-          import androidx.compose.foundation.border
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyRow
           import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.rememberScrollState
           import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.foundation.text.KeyboardOptions
-          import androidx.compose.foundation.verticalScroll
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
@@ -91,14 +83,13 @@ jobs:
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.CornerRadius
+          import androidx.compose.ui.geometry.Offset
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.drawscope.Stroke
           import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.platform.LocalLifecycleOwner
-          import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.font.FontFamily
           import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.input.KeyboardType
-          import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
@@ -108,231 +99,154 @@ jobs:
           import androidx.lifecycle.LifecycleEventObserver
           import androidx.lifecycle.LifecycleOwner
           import androidx.lifecycle.LifecycleRegistry
+          import androidx.lifecycle.compose.LocalLifecycleOwner
           import com.example.domain.scanner.KrotyCameraAnalyzer
           import com.example.ui.KrotyViewModel
-          import com.example.ui.theme.*
-          import com.google.mlkit.vision.barcode.BarcodeScanning
           import com.google.mlkit.vision.common.InputImage
           import com.google.mlkit.vision.text.TextRecognition
           import com.google.mlkit.vision.text.latin.TextRecognizerOptions
           import java.util.concurrent.Executors
 
+          private val KrotyDarkBg = Color(0xFF0A0E17)
+          private val KrotyCardBg = Color(0xFF131B2E)
+          private val KrotyCardBorder = Color(0xFF1E293B)
+          private val KrotyCyan = Color(0xFF00E5FF)
+          private val KrotyEmerald = Color(0xFF00E676)
+          private val KrotyAmber = Color(0xFFFFB300)
+          private val KrotyCoralRed = Color(0xFFFF5252)
+          private val KrotyTextPrimary = Color(0xFFF8FAFC)
+          private val KrotyTextSecondary = Color(0xFF94A3B8)
+
           private class ScannerTabLifecycleOwner : LifecycleOwner {
               private val registry = LifecycleRegistry(this)
-              init {
-                  registry.currentState = Lifecycle.State.INITIALIZED
+              override val lifecycle: Lifecycle get() = registry
+              fun handleEvent(event: Lifecycle.Event) {
+                  try { registry.handleLifecycleEvent(event) } catch (_: Exception) {}
               }
-              fun resumeCamera() {
-                  if (registry.currentState != Lifecycle.State.DESTROYED) {
-                      registry.currentState = Lifecycle.State.RESUMED
-                  }
+              fun forceDestroy() {
+                  try {
+                      if (registry.currentState != Lifecycle.State.DESTROYED) {
+                          registry.currentState = Lifecycle.State.DESTROYED
+                      }
+                  } catch (_: Exception) {}
               }
-              fun pauseCamera() {
-                  if (registry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                      registry.currentState = Lifecycle.State.CREATED
-                  }
-              }
-              fun destroyCamera() {
-                  if (registry.currentState != Lifecycle.State.DESTROYED) {
-                      registry.currentState = Lifecycle.State.DESTROYED
-                  }
-              }
-              override val lifecycle: Lifecycle
-                  get() = registry
           }
 
           @Composable
           fun ScannerScreen(
               viewModel: KrotyViewModel,
-              onNavigateToRadar: () -> Unit
+              onConnectedNavigateToRadar: () -> Unit = {},
+              onNavigateToRadar: () -> Unit = onConnectedNavigateToRadar
           ) {
               val context = LocalContext.current
               val parentLifecycleOwner = LocalLifecycleOwner.current
-              val appContainer = viewModel.container
-
-              val scannerLifecycleOwner = remember { ScannerTabLifecycleOwner() }
+              val appContainer = viewModel.appContainer
 
               var hasCameraPermission by remember {
                   mutableStateOf(
-                      ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                      ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                          PackageManager.PERMISSION_GRANTED
                   )
               }
 
-              val cameraPermissionLauncher = rememberLauncherForActivityResult(
+              val permissionLauncher = rememberLauncherForActivityResult(
                   contract = ActivityResultContracts.RequestPermission()
-              ) { granted ->
-                  hasCameraPermission = granted
+              ) { granted -> hasCameraPermission = granted }
+
+              LaunchedEffect(Unit) {
+                  if (!hasCameraPermission) {
+                      permissionLauncher.launch(Manifest.permission.CAMERA)
+                  }
               }
 
-              var scannedCode by remember { mutableStateOf("") }
-              var voucherPassword by remember { mutableStateOf("") }
-              var voucherPrice by remember { mutableStateOf("") }
-              var voucherMb by remember { mutableStateOf("") }
-              var targetLength by remember { mutableIntStateOf(0) }
-              var torchEnabled by remember { mutableStateOf(false) }
-              var zoomRatio by remember { mutableFloatStateOf(1.0f) }
-              var cameraRef by remember { mutableStateOf<Camera?>(null) }
-              var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
-              var autoConnectOnScan by remember { mutableStateOf(false) }
-              var scanStatusMessage by remember { mutableStateOf<String?>(null) }
-              var isAnalyzingGallery by remember { mutableStateOf(false) }
-              var cameraRebindKey by remember { mutableIntStateOf(0) }
+              var detectedCode by remember { mutableStateOf("") }
+              var isConfirmedConsensus by remember { mutableStateOf(false) }
+              var expectedLengthFilter by remember { mutableStateOf<Int?>(null) }
+              var isTorchEnabled by remember { mutableStateOf(false) }
+              var zoomRatio by remember { mutableFloatStateOf(1f) }
+              var cameraInstance by remember { mutableStateOf<Camera?>(null) }
+              var cameraProviderInstance by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+              var isGalleryScanning by remember { mutableStateOf(false) }
+              var manualEditCode by remember { mutableStateOf("") }
+              var autoConnectTriggered by remember { mutableStateOf(false) }
 
+              val tabLifecycleOwner = remember { ScannerTabLifecycleOwner() }
               val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
               fun forceShutDownCameraHardware() {
-                  try {
-                      torchEnabled = false
-                      cameraRef?.cameraControl?.enableTorch(false)
-                  } catch (_: Exception) {}
-                  try {
-                      scannerLifecycleOwner.destroyCamera()
-                  } catch (_: Exception) {}
-                  try {
-                      cameraProviderRef?.unbindAll()
-                  } catch (_: Exception) {}
-                  try {
-                      ProcessCameraProvider.getInstance(context).get().unbindAll()
-                  } catch (_: Exception) {}
-              }
-
-              val krotyAnalyzer = remember {
-                  KrotyCameraAnalyzer(
-                      ocrParser = appContainer.ocrParser,
-                      consensusTracker = appContainer.consensusTracker,
-                      onVoucherLocked = { lockedCode ->
-                          if (scannedCode != lockedCode) {
-                              scannedCode = lockedCode
-                              scanStatusMessage = "✅ تم التقاط رقم الكرت بالكاميرا: $lockedCode"
-                              try {
-                                  ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                                      .startTone(ToneGenerator.TONE_PROP_BEEP, 120)
-                              } catch (_: Exception) {}
-
-                              if (autoConnectOnScan) {
-                                  forceShutDownCameraHardware()
-                                  viewModel.saveAndConnectVoucher(
-                                      code = lockedCode,
-                                      connectImmediately = true
-                                  )
-                                  onNavigateToRadar()
-                              }
-                          }
-                      }
-                  )
+                  try { cameraInstance?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
+                  try { cameraProviderInstance?.unbindAll() } catch (_: Exception) {}
+                  cameraInstance = null
+                  tabLifecycleOwner.forceDestroy()
               }
 
               DisposableEffect(parentLifecycleOwner) {
-                  scannerLifecycleOwner.resumeCamera()
-                  val observer = LifecycleEventObserver { _, event ->
+                  tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_CREATE)
+                  tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_START)
+                  tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_RESUME)
+
+                  val parentObserver = LifecycleEventObserver { _, event ->
                       when (event) {
-                          Lifecycle.Event.ON_RESUME -> {
-                              hasCameraPermission = ContextCompat.checkSelfPermission(
-                                  context,
-                                  Manifest.permission.CAMERA
-                              ) == PackageManager.PERMISSION_GRANTED
-                              scannerLifecycleOwner.resumeCamera()
+                          Lifecycle.Event.ON_RESUME -> tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_RESUME)
+                          Lifecycle.Event.ON_PAUSE -> {
+                              try { cameraInstance?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
+                              isTorchEnabled = false
+                              tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_PAUSE)
                           }
-                          Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
-                              torchEnabled = false
-                              try { cameraRef?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
-                              scannerLifecycleOwner.pauseCamera()
-                              try { cameraProviderRef?.unbindAll() } catch (_: Exception) {}
+                          Lifecycle.Event.ON_STOP -> {
+                              try { cameraProviderInstance?.unbindAll() } catch (_: Exception) {}
+                              tabLifecycleOwner.handleEvent(Lifecycle.Event.ON_STOP)
                           }
+                          Lifecycle.Event.ON_DESTROY -> forceShutDownCameraHardware()
                           else -> {}
                       }
                   }
-                  parentLifecycleOwner.lifecycle.addObserver(observer)
+                  parentLifecycleOwner.lifecycle.addObserver(parentObserver)
+
                   onDispose {
-                      parentLifecycleOwner.lifecycle.removeObserver(observer)
+                      parentLifecycleOwner.lifecycle.removeObserver(parentObserver)
                       forceShutDownCameraHardware()
                       try { cameraExecutor.shutdownNow() } catch (_: Exception) {}
                   }
-              }
-
-              LaunchedEffect(targetLength) {
-                  krotyAnalyzer.targetCodeLength = targetLength
-                  appContainer.consensusTracker.reset()
               }
 
               val galleryLauncher = rememberLauncherForActivityResult(
                   contract = ActivityResultContracts.GetContent()
               ) { uri: Uri? ->
                   if (uri != null) {
-                      isAnalyzingGallery = true
-                      scanStatusMessage = "⏳ جاري قراءة صورة الكرت من المعرض بالذكاء الاصطناعي..."
+                      isGalleryScanning = true
                       try {
                           val inputImage = InputImage.fromFilePath(context, uri)
                           val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                          val barcodeScanner = BarcodeScanning.getClient()
-
-                          barcodeScanner.process(inputImage)
-                              .addOnSuccessListener { barcodes ->
-                                  val qr = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
-                                  if (!qr.isNullOrBlank()) {
-                                      val cleaned = qr.trim()
-                                      scannedCode = cleaned
-                                      isAnalyzingGallery = false
-                                      scanStatusMessage = "✅ تم استخراج الكود من باركود الصورة: $cleaned"
-                                      if (autoConnectOnScan) {
-                                          forceShutDownCameraHardware()
-                                          viewModel.saveAndConnectVoucher(code = cleaned, connectImmediately = true)
-                                          onNavigateToRadar()
-                                      }
+                          recognizer.process(inputImage)
+                              .addOnSuccessListener { visionText ->
+                                  isGalleryScanning = false
+                                  val candidate = appContainer.ocrParser.extractBestCandidate(
+                                      visionText = visionText,
+                                      expectedLength = expectedLengthFilter
+                                  )
+                                  if (candidate != null) {
+                                      detectedCode = candidate.code
+                                      manualEditCode = candidate.code
+                                      isConfirmedConsensus = true
                                   } else {
-                                      recognizer.process(inputImage)
-                                          .addOnSuccessListener { visionText ->
-                                              val best = appContainer.ocrParser.extractBestCandidate(
-                                                  visionText = visionText,
-                                                  targetLength = targetLength,
-                                                  customRegex = null
-                                              )
-                                              val fallbackCode = if (best == null) {
-                                                  val normalized = visionText.text
-                                                      .replace('O', '0')
-                                                      .replace('o', '0')
-                                                      .replace('I', '1')
-                                                      .replace('l', '1')
-                                                      .replace('S', '5')
-                                                      .replace('B', '8')
-                                                  Regex("\\b\\d{5,16}\\b").findAll(normalized)
-                                                      .map { it.value }
-                                                      .firstOrNull { candidate ->
-                                                          targetLength <= 0 || candidate.length == targetLength
-                                                      }
-                                              } else null
-
-                                              val finalCode = best?.code ?: fallbackCode
-                                              isAnalyzingGallery = false
-                                              if (!finalCode.isNullOrBlank()) {
-                                                  scannedCode = finalCode
-                                                  scanStatusMessage = "✅ تم استخراج رقم الكرت من صورة المعرض: $finalCode"
-                                                  try {
-                                                      ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                                                          .startTone(ToneGenerator.TONE_PROP_BEEP, 120)
-                                                  } catch (_: Exception) {}
-                                                  if (autoConnectOnScan) {
-                                                      forceShutDownCameraHardware()
-                                                      viewModel.saveAndConnectVoucher(code = finalCode, connectImmediately = true)
-                                                      onNavigateToRadar()
-                                                  }
-                                              } else {
-                                                  scanStatusMessage = "⚠️ لم يتم العثور على أرقام واضحة في الصورة. جرب تحديد طول الكرت."
-                                              }
-                                          }
-                                          .addOnFailureListener {
-                                              isAnalyzingGallery = false
-                                              scanStatusMessage = "❌ تعذر تحليل النص في الصورة المختارة."
-                                          }
+                                      val fallback = visionText.text
+                                          .replace('O', '0').replace('o', '0')
+                                          .replace('I', '1').replace('l', '1')
+                                          .replace('S', '5').replace('B', '8')
+                                          .lines()
+                                          .map { it.trim() }
+                                          .firstOrNull { it.length in 4..16 && it.any { c -> c.isDigit() } }
+                                      if (fallback != null) {
+                                          detectedCode = fallback
+                                          manualEditCode = fallback
+                                          isConfirmedConsensus = true
+                                      }
                                   }
                               }
-                              .addOnFailureListener {
-                                  isAnalyzingGallery = false
-                                  scanStatusMessage = "❌ تعذر قراءة الصورة من المعرض."
-                              }
+                              .addOnFailureListener { isGalleryScanning = false }
                       } catch (_: Exception) {
-                          isAnalyzingGallery = false
-                          scanStatusMessage = "❌ حدث خطأ أثناء فتح الصورة من المعرض."
+                          isGalleryScanning = false
                       }
                   }
               }
@@ -341,215 +255,64 @@ jobs:
                   modifier = Modifier
                       .fillMaxSize()
                       .background(KrotyDarkBg)
-                      .verticalScroll(rememberScrollState())
-                      .padding(16.dp),
-                  verticalArrangement = Arrangement.spacedBy(14.dp)
+                      .padding(12.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp)
               ) {
                   Card(
+                      modifier = Modifier.fillMaxWidth(),
                       colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                      shape = RoundedCornerShape(18.dp),
-                      modifier = Modifier
-                          .fillMaxWidth()
-                          .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
+                      border = BorderStroke(1.dp, KrotyCardBorder),
+                      shape = RoundedCornerShape(16.dp)
                   ) {
-                      Column(modifier = Modifier.padding(14.dp)) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .padding(12.dp),
+                          verticalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
                           Row(
                               modifier = Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.SpaceBetween,
                               verticalAlignment = Alignment.CenterVertically
                           ) {
-                              Row(
-                                  verticalAlignment = Alignment.CenterVertically,
+                              Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = KrotyCyan)
+                              Spacer(modifier = Modifier.width(8.dp))
+                              Text(
+                                  text = "ماسح الكروت الذكي (CameraX + ML Kit)",
+                                  style = MaterialTheme.typography.titleMedium,
+                                  fontWeight = FontWeight.Bold,
+                                  color = KrotyTextPrimary,
+                                  maxLines = 1,
+                                  overflow = TextOverflow.Ellipsis,
                                   modifier = Modifier.weight(1f)
-                              ) {
-                                  Icon(
-                                      Icons.Default.QrCodeScanner,
-                                      contentDescription = null,
-                                      tint = KrotyCyan,
-                                      modifier = Modifier.size(22.dp)
-                                  )
-                                  Spacer(modifier = Modifier.width(8.dp))
-                                  Text(
-                                      text = "الماسح الذكي للكروت (AI Camera)",
-                                      color = KrotyCyan,
-                                      fontWeight = FontWeight.Bold,
-                                      fontSize = 15.sp,
-                                      maxLines = 1,
-                                      softWrap = false,
-                                      overflow = TextOverflow.Ellipsis
-                                  )
-                              }
-
-                              IconButton(
-                                  onClick = {
-                                      appContainer.consensusTracker.reset()
-                                      cameraRebindKey++
-                                  },
-                                  modifier = Modifier.size(34.dp)
-                              ) {
-                                  Icon(
-                                      Icons.Default.Refresh,
-                                      contentDescription = "إعادة تنشيط الكاميرا",
-                                      tint = KrotyTextSecondary
-                                  )
-                              }
+                              )
                           }
-
-                          Spacer(modifier = Modifier.height(10.dp))
-
-                          Box(
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .height(235.dp)
-                                  .clip(RoundedCornerShape(16.dp))
-                                  .background(Color.Black)
-                                  .border(2.dp, KrotyCyan.copy(alpha = 0.7f), RoundedCornerShape(16.dp)),
-                              contentAlignment = Alignment.Center
-                          ) {
-                              if (hasCameraPermission) {
-                                  key(cameraRebindKey) {
-                                      AndroidView(
-                                          modifier = Modifier.fillMaxSize(),
-                                          factory = { ctx ->
-                                              val previewView = PreviewView(ctx).apply {
-                                                  implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                                                  scaleType = PreviewView.ScaleType.FILL_CENTER
-                                              }
-                                              val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                                              previewView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                                                  override fun onViewAttachedToWindow(v: View) {}
-                                                  override fun onViewDetachedFromWindow(v: View) {
-                                                      forceShutDownCameraHardware()
-                                                  }
-                                              })
-
-                                              cameraProviderFuture.addListener({
-                                                  try {
-                                                      val cameraProvider = cameraProviderFuture.get()
-                                                      cameraProviderRef = cameraProvider
-                                                      if (!previewView.isAttachedToWindow ||
-                                                          scannerLifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED
-                                                      ) {
-                                                          cameraProvider.unbindAll()
-                                                          return@addListener
-                                                      }
-                                                      val preview = Preview.Builder().build().also {
-                                                          it.setSurfaceProvider(previewView.surfaceProvider)
-                                                      }
-                                                      val imageAnalysis = ImageAnalysis.Builder()
-                                                          .setTargetResolution(Size(1280, 720))
-                                                          .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                                          .build()
-                                                          .also {
-                                                              it.setAnalyzer(cameraExecutor, krotyAnalyzer)
-                                                          }
-
-                                                      cameraProvider.unbindAll()
-                                                      val cam = cameraProvider.bindToLifecycle(
-                                                          scannerLifecycleOwner,
-                                                          CameraSelector.DEFAULT_BACK_CAMERA,
-                                                          preview,
-                                                          imageAnalysis
-                                                      )
-                                                      cameraRef = cam
-                                                  } catch (_: Exception) {
-                                                  }
-                                              }, ContextCompat.getMainExecutor(ctx))
-                                              previewView
-                                          }
-                                      )
-                                  }
-
-                                  Box(
-                                      modifier = Modifier
-                                          .fillMaxWidth(0.84f)
-                                          .height(88.dp)
-                                          .border(2.dp, KrotyEmerald, RoundedCornerShape(12.dp)),
-                                      contentAlignment = Alignment.Center
-                                  ) {
-                                      Box(
-                                          modifier = Modifier
-                                              .fillMaxWidth(0.92f)
-                                              .height(1.5.dp)
-                                              .background(KrotyCyan.copy(alpha = 0.65f))
-                                      )
-                                  }
-
-                                  Surface(
-                                      color = KrotyDarkBg.copy(alpha = 0.78f),
-                                      shape = RoundedCornerShape(50),
-                                      modifier = Modifier
-                                          .align(Alignment.BottomCenter)
-                                          .padding(bottom = 10.dp)
-                                  ) {
-                                      Text(
-                                          text = "وجّه الكاميرا نحو أرقام الكرت أو الباركود",
-                                          color = KrotyCyan,
-                                          fontSize = 12.sp,
-                                          maxLines = 1,
-                                          softWrap = false,
-                                          modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-                                      )
-                                  }
-                              } else {
-                                  Column(
-                                      horizontalAlignment = Alignment.CenterHorizontally,
-                                      modifier = Modifier.padding(20.dp)
-                                  ) {
-                                      Icon(
-                                          Icons.Default.CameraAlt,
-                                          contentDescription = null,
-                                          tint = KrotyAmber,
-                                          modifier = Modifier.size(44.dp)
-                                      )
-                                      Spacer(modifier = Modifier.height(10.dp))
-                                      Text(
-                                          "صلاحية الكاميرا مطلوبة لتشغيل الماسح الضوئي الحي",
-                                          color = KrotyTextPrimary,
-                                          fontSize = 13.sp,
-                                          textAlign = TextAlign.Center
-                                      )
-                                      Spacer(modifier = Modifier.height(12.dp))
-                                      Button(
-                                          onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                                          colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan)
-                                      ) {
-                                          Text("تفعيل الكاميرا الآن", color = KrotyDarkBg, fontWeight = FontWeight.Bold)
-                                      }
-                                  }
-                              }
-                          }
-
-                          Spacer(modifier = Modifier.height(12.dp))
 
                           Row(
                               modifier = Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(10.dp)
+                              horizontalArrangement = Arrangement.spacedBy(8.dp)
                           ) {
                               Button(
                                   onClick = {
-                                      val newState = !torchEnabled
-                                      torchEnabled = newState
-                                      cameraRef?.cameraControl?.enableTorch(newState)
+                                      val nextTorch = !isTorchEnabled
+                                      isTorchEnabled = nextTorch
+                                      cameraInstance?.cameraControl?.enableTorch(nextTorch)
                                   },
+                                  modifier = Modifier.weight(1f),
                                   colors = ButtonDefaults.buttonColors(
-                                      containerColor = if (torchEnabled) KrotyAmber else Color(0xFF1F2E4D)
+                                      containerColor = if (isTorchEnabled) KrotyAmber else KrotyCardBorder,
+                                      contentColor = if (isTorchEnabled) Color.Black else KrotyTextPrimary
                                   ),
-                                  shape = RoundedCornerShape(12.dp),
-                                  modifier = Modifier
-                                      .weight(1f)
-                                      .height(46.dp)
+                                  shape = RoundedCornerShape(10.dp),
+                                  contentPadding = PaddingValues(vertical = 8.dp, horizontal = 10.dp)
                               ) {
                                   Icon(
-                                      imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                                      contentDescription = "الفلاش",
-                                      tint = if (torchEnabled) KrotyDarkBg else KrotyAmber
+                                      imageVector = if (isTorchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                                      contentDescription = null,
+                                      modifier = Modifier.size(18.dp)
                                   )
                                   Spacer(modifier = Modifier.width(6.dp))
                                   Text(
-                                      text = if (torchEnabled) "إطفاء الفلاش" else "تشغيل الفلاش",
-                                      color = if (torchEnabled) KrotyDarkBg else KrotyTextPrimary,
+                                      text = if (isTorchEnabled) "إيقاف الفلاش" else "تشغيل الفلاش",
                                       fontWeight = FontWeight.Bold,
                                       fontSize = 13.sp,
                                       maxLines = 1,
@@ -557,29 +320,19 @@ jobs:
                                   )
                               }
 
-                              Button(
+                              OutlinedButton(
                                   onClick = { galleryLauncher.launch("image/*") },
-                                  colors = ButtonDefaults.buttonColors(
-                                      containerColor = Color(0xFF1A3648)
-                                  ),
-                                  shape = RoundedCornerShape(12.dp),
-                                  modifier = Modifier
-                                      .weight(1f)
-                                      .height(46.dp)
+                                  modifier = Modifier.weight(1f),
+                                  border = BorderStroke(1.dp, KrotyCyan),
+                                  shape = RoundedCornerShape(10.dp),
+                                  contentPadding = PaddingValues(vertical = 8.dp, horizontal = 10.dp)
                               ) {
-                                  if (isAnalyzingGallery) {
-                                      CircularProgressIndicator(
-                                          modifier = Modifier.size(18.dp),
-                                          color = KrotyCyan,
-                                          strokeWidth = 2.dp
-                                      )
-                                  } else {
-                                      Icon(
-                                          imageVector = Icons.Default.PhotoLibrary,
-                                          contentDescription = "المعرض",
-                                          tint = KrotyCyan
-                                      )
-                                  }
+                                  Icon(
+                                      imageVector = Icons.Default.PhotoLibrary,
+                                      contentDescription = null,
+                                      tint = KrotyCyan,
+                                      modifier = Modifier.size(18.dp)
+                                  )
                                   Spacer(modifier = Modifier.width(6.dp))
                                   Text(
                                       text = "صورة من المعرض",
@@ -591,158 +344,221 @@ jobs:
                                   )
                               }
                           }
+                      }
+                  }
 
-                          scanStatusMessage?.let { statusMsg ->
-                              Spacer(modifier = Modifier.height(10.dp))
-                              Surface(
-                                  color = Color(0xFF0E2238),
-                                  shape = RoundedCornerShape(10.dp),
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .border(1.dp, KrotyCyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                              ) {
+                  val lengthOptions = listOf(null to "تلقائي شامل", 6 to "6 أرقام", 8 to "8 أرقام", 10 to "10 أرقام", 12 to "12 رقم")
+                  LazyRow(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      contentPadding = PaddingValues(horizontal = 2.dp)
+                  ) {
+                      items(lengthOptions) { (len, label) ->
+                          FilterChip(
+                              selected = expectedLengthFilter == len,
+                              onClick = {
+                                  expectedLengthFilter = len
+                                  appContainer.consensusTracker.reset()
+                              },
+                              label = {
                                   Text(
-                                      text = statusMsg,
-                                      color = KrotyEmerald,
+                                      text = label,
                                       fontSize = 12.sp,
-                                      fontWeight = FontWeight.Bold,
-                                      modifier = Modifier.padding(10.dp)
+                                      maxLines = 1,
+                                      softWrap = false
                                   )
+                              },
+                              colors = FilterChipDefaults.filterChipColors(
+                                  selectedContainerColor = KrotyCyan.copy(alpha = 0.22f),
+                                  selectedLabelColor = KrotyCyan
+                              )
+                          )
+                      }
+                  }
+
+                  Box(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .weight(1f)
+                          .clip(RoundedCornerShape(18.dp))
+                          .background(Color.Black),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      if (hasCameraPermission) {
+                          AndroidView(
+                              modifier = Modifier.fillMaxSize(),
+                              factory = { ctx ->
+                                  val previewView = PreviewView(ctx).apply {
+                                      implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                                      scaleType = PreviewView.ScaleType.FILL_CENTER
+                                  }
+
+                                  previewView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                                      override fun onViewAttachedToWindow(v: View) {}
+                                      override fun onViewDetachedFromWindow(v: View) {
+                                          forceShutDownCameraHardware()
+                                      }
+                                  })
+
+                                  val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                                  cameraProviderFuture.addListener({
+                                      try {
+                                          val cameraProvider = cameraProviderFuture.get()
+                                          cameraProviderInstance = cameraProvider
+
+                                          if (tabLifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
+                                              cameraProvider.unbindAll()
+                                              return@addListener
+                                          }
+
+                                          val preview = Preview.Builder().build().also {
+                                              it.setSurfaceProvider(previewView.surfaceProvider)
+                                          }
+
+                                          val analyzer = KrotyCameraAnalyzer(
+                                              ocrParser = appContainer.ocrParser,
+                                              consensusTracker = appContainer.consensusTracker,
+                                              expectedLengthProvider = { expectedLengthFilter },
+                                              onLiveCandidateDetected = { liveCode ->
+                                                  if (!isConfirmedConsensus) {
+                                                      detectedCode = liveCode
+                                                  }
+                                              },
+                                              onConsensusConfirmed = { confirmedCode, _ ->
+                                                  detectedCode = confirmedCode
+                                                  manualEditCode = confirmedCode
+                                                  isConfirmedConsensus = true
+                                              }
+                                          )
+
+                                          val imageAnalysis = ImageAnalysis.Builder()
+                                              .setTargetResolution(Size(1280, 720))
+                                              .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                              .build()
+                                              .also { it.setAnalyzer(cameraExecutor, analyzer) }
+
+                                          cameraProvider.unbindAll()
+                                          cameraInstance = cameraProvider.bindToLifecycle(
+                                              tabLifecycleOwner,
+                                              CameraSelector.DEFAULT_BACK_CAMERA,
+                                              preview,
+                                              imageAnalysis
+                                          )
+                                      } catch (_: Exception) {}
+                                  }, ContextCompat.getMainExecutor(ctx))
+
+                                  previewView
                               }
+                          )
+
+                          Canvas(modifier = Modifier.fillMaxSize()) {
+                              val boxW = size.width * 0.82f
+                              val boxH = size.height * 0.36f
+                              val left = (size.width - boxW) / 2f
+                              val top = (size.height - boxH) / 2f
+                              val strokeColor = if (isConfirmedConsensus) KrotyEmerald else KrotyCyan
+
+                              drawRoundRect(
+                                  color = strokeColor,
+                                  topLeft = Offset(left, top),
+                                  size = androidx.compose.ui.geometry.Size(boxW, boxH),
+                                  cornerRadius = CornerRadius(24f, 24f),
+                                  style = Stroke(width = 5f)
+                              )
                           }
 
-                          Spacer(modifier = Modifier.height(10.dp))
-
-                          Row(
-                              modifier = Modifier.fillMaxWidth(),
-                              verticalAlignment = Alignment.CenterVertically
+                          Column(
+                              modifier = Modifier
+                                  .align(Alignment.BottomCenter)
+                                  .fillMaxWidth()
+                                  .background(Color.Black.copy(alpha = 0.6f))
+                                  .padding(horizontal = 16.dp, vertical = 6.dp)
                           ) {
-                              Text(
-                                  "تقريب العدسة: ${String.format("%.1fx", zoomRatio)}",
-                                  color = KrotyTextSecondary,
-                                  fontSize = 12.sp,
-                                  maxLines = 1,
-                                  softWrap = false
-                              )
-                              Spacer(modifier = Modifier.width(10.dp))
+                              Row(
+                                  modifier = Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.SpaceBetween
+                              ) {
+                                  Text("مستوى التقريب (Zoom)", color = KrotyTextSecondary, fontSize = 11.sp, maxLines = 1)
+                                  Text("${String.format("%.1f", zoomRatio)}x", color = KrotyCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                              }
                               Slider(
                                   value = zoomRatio,
-                                  onValueChange = {
-                                      zoomRatio = it
-                                      cameraRef?.cameraControl?.setZoomRatio(it)
+                                  onValueChange = { newZoom ->
+                                      zoomRatio = newZoom
+                                      cameraInstance?.cameraControl?.setZoomRatio(newZoom)
                                   },
-                                  valueRange = 1.0f..3.0f,
-                                  modifier = Modifier.weight(1f)
+                                  valueRange = 1f..3f,
+                                  colors = SliderDefaults.colors(thumbColor = KrotyCyan, activeTrackColor = KrotyCyan)
                               )
                           }
-
-                          val lengthOptions = listOf(0, 6, 8, 10, 12)
-                          LazyRow(
-                              modifier = Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      } else {
+                          Column(
+                              horizontalAlignment = Alignment.CenterHorizontally,
+                              modifier = Modifier.padding(24.dp)
                           ) {
-                              items(lengthOptions) { len ->
-                                  FilterChip(
-                                      selected = targetLength == len,
-                                      onClick = { targetLength = len },
-                                      label = {
-                                          Text(
-                                              text = if (len == 0) "تلقائي (الكل)" else "$len أرقام",
-                                              fontSize = 12.sp,
-                                              maxLines = 1,
-                                              softWrap = false
-                                          )
-                                      }
-                                  )
+                              Icon(Icons.Default.CameraAlt, contentDescription = null, tint = KrotyCoralRed, modifier = Modifier.size(48.dp))
+                              Spacer(modifier = Modifier.height(8.dp))
+                              Text("يلزم منح صلاحية الكاميرا لمسح الكروت الحقيقية", color = KrotyTextPrimary)
+                              Spacer(modifier = Modifier.height(8.dp))
+                              Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                                  Text("منح صلاحية الكاميرا الآن", maxLines = 1, softWrap = false)
                               }
-                          }
-
-                          Spacer(modifier = Modifier.height(8.dp))
-
-                          Row(
-                              modifier = Modifier.fillMaxWidth(),
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.SpaceBetween
-                          ) {
-                              Text(
-                                  "الاتصال التلقائي بالبوابة فور التقاط الكرت ⚡",
-                                  color = KrotyTextPrimary,
-                                  fontSize = 13.sp,
-                                  modifier = Modifier.weight(1f)
-                              )
-                              Switch(
-                                  checked = autoConnectOnScan,
-                                  onCheckedChange = { autoConnectOnScan = it }
-                              )
                           }
                       }
                   }
 
                   Card(
+                      modifier = Modifier.fillMaxWidth(),
                       colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                      shape = RoundedCornerShape(18.dp),
-                      modifier = Modifier
-                          .fillMaxWidth()
-                          .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
+                      border = BorderStroke(1.dp, if (isConfirmedConsensus) KrotyEmerald else KrotyCardBorder),
+                      shape = RoundedCornerShape(16.dp)
                   ) {
-                      Column(modifier = Modifier.padding(16.dp)) {
-                          Text(
-                              "بيانات الكرت المستخرج والتنفيذ الفوري",
-                              color = KrotyTextPrimary,
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 15.sp
-                          )
-                          Spacer(modifier = Modifier.height(10.dp))
-
-                          OutlinedTextField(
-                              value = scannedCode,
-                              onValueChange = { scannedCode = it },
-                              label = { Text("رقم الكرت (يُملأ تلقائياً من الكاميرا أو المعرض أو يدوياً)") },
-                              textStyle = TextStyle(
-                                  fontFamily = FontFamily.Monospace,
-                                  fontSize = 20.sp,
-                                  fontWeight = FontWeight.ExtraBold,
-                                  color = KrotyEmerald
-                              ),
-                              singleLine = true,
-                              modifier = Modifier.fillMaxWidth()
-                          )
-
-                          Spacer(modifier = Modifier.height(8.dp))
-
-                          OutlinedTextField(
-                              value = voucherPassword,
-                              onValueChange = { voucherPassword = it },
-                              label = { Text("كلمة المرور (اتركه فارغاً لكروت المايكروتك العادية)") },
-                              singleLine = true,
-                              modifier = Modifier.fillMaxWidth()
-                          )
-
-                          Spacer(modifier = Modifier.height(8.dp))
-
+                      Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                           Row(
                               modifier = Modifier.fillMaxWidth(),
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                              horizontalArrangement = Arrangement.SpaceBetween,
+                              verticalAlignment = Alignment.CenterVertically
                           ) {
-                              OutlinedTextField(
-                                  value = voucherPrice,
-                                  onValueChange = { voucherPrice = it },
-                                  label = { Text("السعر (اختياري)") },
-                                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                  singleLine = true,
+                              Text(
+                                  text = if (isConfirmedConsensus) "تم تأكيد الكرت بنجاح (تطابق إطارين)"
+                                  else if (isGalleryScanning) "جاري فحص الصورة..."
+                                  else "وجّه الكاميرا نحو رقم الكرت أو الباركود",
+                                  color = if (isConfirmedConsensus) KrotyEmerald else KrotyTextSecondary,
+                                  fontSize = 12.sp,
+                                  fontWeight = FontWeight.SemiBold,
+                                  maxLines = 1,
+                                  overflow = TextOverflow.Ellipsis,
                                   modifier = Modifier.weight(1f)
                               )
-                              OutlinedTextField(
-                                  value = voucherMb,
-                                  onValueChange = { voucherMb = it },
-                                  label = { Text("الباقة MB (اختياري)") },
-                                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                  singleLine = true,
-                                  modifier = Modifier.weight(1f)
-                              )
+                              if (detectedCode.isNotEmpty()) {
+                                  TextButton(onClick = {
+                                      detectedCode = ""
+                                      manualEditCode = ""
+                                      isConfirmedConsensus = false
+                                      autoConnectTriggered = false
+                                      appContainer.consensusTracker.reset()
+                                  }) {
+                                      Text("إعادة مسح", color = KrotyAmber, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                  }
+                              }
                           }
 
-                          Spacer(modifier = Modifier.height(14.dp))
+                          OutlinedTextField(
+                              value = manualEditCode.ifEmpty { detectedCode },
+                              onValueChange = {
+                                  manualEditCode = it.trim()
+                                  detectedCode = it.trim()
+                              },
+                              label = { Text("الكود المستخرج (قابل للتعديل أو اللصق)") },
+                              singleLine = true,
+                              textStyle = LocalTextStyle.current.copy(
+                                  fontFamily = FontFamily.Monospace,
+                                  fontWeight = FontWeight.Bold,
+                                  fontSize = 18.sp,
+                                  color = KrotyCyan
+                              ),
+                              modifier = Modifier.fillMaxWidth()
+                          )
 
                           Row(
                               modifier = Modifier.fillMaxWidth(),
@@ -750,54 +566,51 @@ jobs:
                           ) {
                               Button(
                                   onClick = {
-                                      forceShutDownCameraHardware()
-                                      viewModel.saveAndConnectVoucher(
-                                          code = scannedCode,
-                                          password = voucherPassword,
-                                          priceRials = voucherPrice.toDoubleOrNull() ?: 0.0,
-                                          initialMb = voucherMb.toDoubleOrNull() ?: 0.0,
-                                          connectImmediately = true
-                                      )
-                                      onNavigateToRadar()
+                                      val finalCode = manualEditCode.ifEmpty { detectedCode }
+                                      if (finalCode.isNotBlank()) {
+                                          forceShutDownCameraHardware()
+                                          viewModel.saveScannedVoucherAndConnect(
+                                              code = finalCode,
+                                              categoryLabel = "مسح كاميرا ذكي",
+                                              priceYemeniRial = 100,
+                                              connectImmediately = true
+                                          )
+                                          autoConnectTriggered = true
+                                          onNavigateToRadar()
+                                      }
                                   },
-                                  enabled = scannedCode.isNotBlank(),
-                                  colors = ButtonDefaults.buttonColors(containerColor = KrotyEmerald),
-                                  modifier = Modifier.weight(1f)
+                                  enabled = (manualEditCode.isNotBlank() || detectedCode.isNotBlank()),
+                                  modifier = Modifier.weight(1f),
+                                  colors = ButtonDefaults.buttonColors(containerColor = KrotyEmerald, contentColor = Color.Black)
                               ) {
-                                  Icon(Icons.Default.Bolt, contentDescription = null, tint = KrotyDarkBg)
-                                  Spacer(modifier = Modifier.width(6.dp))
-                                  Text(
-                                      "اتصال فوري",
-                                      color = KrotyDarkBg,
-                                      fontWeight = FontWeight.Bold,
-                                      maxLines = 1,
-                                      softWrap = false
-                                  )
+                                  Icon(Icons.Default.Bolt, contentDescription = null)
+                                  Spacer(modifier = Modifier.width(4.dp))
+                                  Text("حفظ واتصال فوري", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                               }
 
                               OutlinedButton(
                                   onClick = {
-                                      viewModel.saveAndConnectVoucher(
-                                          code = scannedCode,
-                                          password = voucherPassword,
-                                          priceRials = voucherPrice.toDoubleOrNull() ?: 0.0,
-                                          initialMb = voucherMb.toDoubleOrNull() ?: 0.0,
-                                          connectImmediately = false
-                                      )
-                                      scannedCode = ""
-                                      appContainer.consensusTracker.reset()
+                                      val finalCode = manualEditCode.ifEmpty { detectedCode }
+                                      if (finalCode.isNotBlank()) {
+                                          viewModel.saveScannedVoucherAndConnect(
+                                              code = finalCode,
+                                              categoryLabel = "مخزون المحفظة",
+                                              priceYemeniRial = 100,
+                                              connectImmediately = false
+                                          )
+                                          detectedCode = ""
+                                          manualEditCode = ""
+                                          isConfirmedConsensus = false
+                                          appContainer.consensusTracker.reset()
+                                      }
                                   },
-                                  enabled = scannedCode.isNotBlank(),
-                                  modifier = Modifier.weight(1f)
+                                  enabled = (manualEditCode.isNotBlank() || detectedCode.isNotBlank()),
+                                  modifier = Modifier.weight(1f),
+                                  border = BorderStroke(1.dp, KrotyCyan)
                               ) {
                                   Icon(Icons.Default.Save, contentDescription = null, tint = KrotyCyan)
-                                  Spacer(modifier = Modifier.width(6.dp))
-                                  Text(
-                                      "حفظ بالمحفظة",
-                                      color = KrotyCyan,
-                                      maxLines = 1,
-                                      softWrap = false
-                                  )
+                                  Spacer(modifier = Modifier.width(4.dp))
+                                  Text("حفظ بالمحفظة", color = KrotyCyan, maxLines = 1, softWrap = false)
                               }
                           }
                       }
@@ -805,1243 +618,291 @@ jobs:
               }
           }
           '''
-
           with open("app/src/main/java/com/example/ui/screens/ScannerScreen.kt", "w", encoding="utf-8") as f:
-              f.write("\n".join(line[10:] if line.startswith("          ") else line for line in scanner_code.splitlines()).strip() + "\n")
-          print("Force-updated ScannerScreen.kt!")
+              f.write(scanner_code.strip() + "\n")
 
-          # 3. Force-Overwrite RadarScreen.kt (Kroty Pro Portal Cockpit + Zero Vertical Text Stacking)
-          radar_code = r'''package com.example.ui.screens
+          # 3. Surgical Upgrade of RadarScreen.kt (Keep working ViewModel bindings + Inject Kroty Pro Portal Cockpit + Fix vertical text wrap)
+          radar_path = "app/src/main/java/com/example/ui/screens/RadarScreen.kt"
+          if os.path.exists(radar_path):
+              with open(radar_path, "r", encoding="utf-8") as f:
+                  r_code = f.read()
 
-          import android.annotation.SuppressLint
-          import android.graphics.Bitmap
-          import android.net.Uri
-          import android.webkit.CookieManager
-          import android.webkit.JavascriptInterface
-          import android.webkit.WebChromeClient
-          import android.webkit.WebResourceError
-          import android.webkit.WebResourceRequest
-          import android.webkit.WebSettings
-          import android.webkit.WebView
-          import android.webkit.WebViewClient
-          import androidx.compose.animation.AnimatedVisibility
+              extra_imports = """package com.example.ui.screens
+
+          import android.view.View
           import androidx.compose.foundation.background
           import androidx.compose.foundation.border
           import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.LazyRow
-          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.horizontalScroll
+          import androidx.compose.foundation.rememberScrollState
           import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.foundation.text.BasicTextField
-          import androidx.compose.foundation.text.KeyboardActions
-          import androidx.compose.foundation.text.KeyboardOptions
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.filled.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Brush
-          import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.text.font.FontFamily
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.input.ImeAction
-          import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.compose.ui.viewinterop.AndroidView
-          import androidx.compose.ui.window.Dialog
-          import androidx.compose.ui.window.DialogProperties
-          import com.example.data.local.entity.VoucherEntity
-          import com.example.domain.radar.WifiTelemetry
-          import com.example.domain.web.MikroTikJsScripts
-          import com.example.ui.KrotyViewModel
-          import com.example.ui.PortalUiState
-          import com.example.ui.theme.*
+          """
+              r_code = r_code.replace("package com.example.ui.screens", extra_imports, 1)
 
+              # Prevent any button/chip text from wrapping vertically letter-by-letter
+              r_code = r_code.replace('"يتعلم..."', '"🎯 يتعلم"')
+              r_code = re.sub(
+                  r'Text\(\s*(if\s*\([^)\n]+\)\s*"[^"\n]+"\s*else\s*"[^"\n]+")\s*\)',
+                  r'Text(\1, maxLines = 1, softWrap = false)',
+                  r_code
+              )
+              r_code = re.sub(
+                  r'Text\(\s*("[^"\n]{1,25}")\s*\)',
+                  r'Text(\1, maxLines = 1, softWrap = false)',
+                  r_code
+              )
+
+              # Replace AndroidView( in RadarScreen.kt with KrotyCockpitAndroidView(
+              r_code = r_code.replace("AndroidView(", "KrotyCockpitAndroidView(")
+
+              cockpit_appendix = r'''
           @Composable
-          fun RadarScreen(
-              viewModel: KrotyViewModel,
-              onRequestLocationEnable: () -> Unit
+          fun <T : View> KrotyCockpitAndroidView(
+              factory: (android.content.Context) -> T,
+              modifier: Modifier = Modifier,
+              update: (T) -> Unit = {}
           ) {
-              val telemetry by viewModel.wifiTelemetry.collectAsState()
-              val activeVoucher by viewModel.activeVoucher.collectAsState()
-              val allVouchers by viewModel.allVouchers.collectAsState()
-              val portalState by viewModel.portalUiState.collectAsState()
-              val networks by viewModel.allNetworks.collectAsState()
+              var capturedWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+              var currentUrlDisplay by remember { mutableStateOf("http://10.0.0.1/login") }
+              var isDesktopMode by remember { mutableStateOf(false) }
 
-              val currentNetConfig = networks.firstOrNull { it.ssid == telemetry.ssid }
-
-              LazyColumn(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .background(KrotyDarkBg)
-                      .padding(16.dp),
-                  verticalArrangement = Arrangement.spacedBy(14.dp)
-              ) {
-                  item {
-                      portalState.statusBannerMessage?.let { msg ->
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2942)),
-                              shape = RoundedCornerShape(12.dp),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Row(
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .padding(12.dp),
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.SpaceBetween
-                              ) {
-                                  Text(
-                                      text = msg,
-                                      color = KrotyCyan,
-                                      fontSize = 13.sp,
-                                      modifier = Modifier.weight(1f)
+              Column(modifier = modifier.fillMaxSize().background(Color(0xFF0A0E17))) {
+                  Surface(
+                      color = Color(0xFF0F172A),
+                      tonalElevation = 8.dp,
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(
+                                  Brush.verticalGradient(
+                                      listOf(Color(0xFF162238), Color(0xFF0B1120))
                                   )
-                                  IconButton(onClick = { viewModel.clearBanner() }) {
-                                      Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = KrotyTextSecondary)
-                                  }
-                              }
-                          }
-                      }
-                  }
-
-                  if (telemetry.isLocationToggleRequired && telemetry.isWifiConnected) {
-                      item {
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2510)),
-                              shape = RoundedCornerShape(14.dp),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Row(
-                                  modifier = Modifier.padding(14.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  Icon(Icons.Default.LocationOn, contentDescription = null, tint = KrotyAmber)
-                                  Spacer(modifier = Modifier.width(10.dp))
-                                  Column(modifier = Modifier.weight(1f)) {
-                                      Text("تفعيل الموقع مطلوب لقراءة اسم الشبكة", color = KrotyAmber, fontWeight = FontWeight.Bold)
-                                      Text("نظام أندرويد يخفي اسم الـ SSID بدون تشغيل الـ GPS.", color = KrotyTextPrimary, fontSize = 12.sp)
-                                  }
-                                  TextButton(onClick = onRequestLocationEnable) {
-                                      Text("تفعيل الآن", color = KrotyCyan, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-                                  }
-                              }
-                          }
-                      }
-                  }
-
-                  item {
-                      LiveWifiRadarCard(
-                          telemetry = telemetry,
-                          isProbing = portalState.isProbingSession,
-                          onRefreshRadar = { viewModel.syncLiveMikroTikSession(silent = false) }
-                      )
-                  }
-
-                  if (telemetry.isMacRandomized) {
-                      item {
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = Color(0xFF331B24)),
-                              shape = RoundedCornerShape(14.dp),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Row(
-                                  modifier = Modifier.padding(14.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  Icon(Icons.Default.Security, contentDescription = null, tint = KrotyCoralRed)
-                                  Spacer(modifier = Modifier.width(10.dp))
-                                  Column {
-                                      Text("تنبيه: العنوان العشوائي (MAC Randomization) مفعل", color = KrotyCoralRed, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                      Text(
-                                          "قد يرفض سيرفر المايكروتك إعادة دخول الكرت إذا تغير عنوان MAC (${telemetry.localMacAddress}). يفضل ضبط MAC الهاتف كعنوان ثابت لهذه الشبكة.",
-                                          color = KrotyTextSecondary,
-                                          fontSize = 12.sp
-                                      )
-                                  }
-                              }
-                          }
-                      }
-                  }
-
-                  item {
-                      LiveSessionAndBalanceCard(
-                          telemetry = telemetry,
-                          activeVoucher = activeVoucher,
-                          portalState = portalState,
-                          onOpenLoginPortal = {
-                              viewModel.openRealPortal(targetPath = "/login", autoLoginVoucher = activeVoucher)
-                          },
-                          onOpenStatusPortal = {
-                              viewModel.openRealPortal(targetPath = "/status")
-                          },
-                          onFreezeSession = {
-                              viewModel.freezeActiveSessionNow()
-                          }
-                      )
-                  }
-
-                  item {
-                      PortalQuickActionsCard(
-                          gatewayIp = telemetry.gatewayIp,
-                          onTouchToLearn = {
-                              viewModel.openRealPortal(targetPath = "/login", enableTouchToLearn = true)
-                          },
-                          onRunWorkerSync = { viewModel.triggerBackgroundWorkerNow() }
-                      )
-                  }
-              }
-
-              if (portalState.isPortalDialogOpen) {
-                  RealPortalWebViewDialog(
-                      viewModel = viewModel,
-                      telemetry = telemetry,
-                      portalState = portalState,
-                      activeVoucher = activeVoucher,
-                      allVouchers = allVouchers,
-                      customSelector = currentNetConfig?.voucherFieldSelector ?: ""
-                  )
-              }
-          }
-
-          @Composable
-          private fun LiveWifiRadarCard(
-              telemetry: WifiTelemetry,
-              isProbing: Boolean,
-              onRefreshRadar: () -> Unit
-          ) {
-              Card(
-                  colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                  shape = RoundedCornerShape(18.dp),
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-              ) {
-                  Column(modifier = Modifier.padding(18.dp)) {
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceBetween,
-                          verticalAlignment = Alignment.CenterVertically
+                              )
+                              .padding(horizontal = 10.dp, vertical = 8.dp),
+                          verticalArrangement = Arrangement.spacedBy(8.dp)
                       ) {
-                          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                              Box(
+                          Row(
+                              modifier = Modifier.fillMaxWidth(),
+                              verticalAlignment = Alignment.CenterVertically,
+                              horizontalArrangement = Arrangement.spacedBy(6.dp)
+                          ) {
+                              IconButton(
+                                  onClick = { if (capturedWebView?.canGoBack() == true) capturedWebView?.goBack() },
                                   modifier = Modifier
-                                      .size(44.dp)
-                                      .clip(CircleShape)
-                                      .background(if (telemetry.isWifiConnected) KrotyCyan.copy(alpha = 0.15f) else KrotyCoralRed.copy(alpha = 0.15f)),
-                                  contentAlignment = Alignment.Center
+                                      .size(34.dp)
+                                      .clip(RoundedCornerShape(8.dp))
+                                      .background(Color(0xFF1E293B))
                               ) {
                                   Icon(
-                                      imageVector = Icons.Default.Wifi,
-                                      contentDescription = null,
-                                      tint = if (telemetry.isWifiConnected) KrotyCyan else KrotyCoralRed
+                                      Icons.Default.ArrowForward,
+                                      contentDescription = "رجوع",
+                                      tint = Color(0xFFF8FAFC),
+                                      modifier = Modifier.size(16.dp)
                                   )
                               }
-                              Spacer(modifier = Modifier.width(12.dp))
-                              Column {
-                                  Text(
-                                      text = telemetry.ssid,
-                                      color = KrotyTextPrimary,
-                                      fontSize = 18.sp,
-                                      fontWeight = FontWeight.Bold,
-                                      maxLines = 1,
-                                      softWrap = false,
-                                      overflow = TextOverflow.Ellipsis
-                                  )
-                                  Text(
-                                      text = if (telemetry.gatewayIp.isNotBlank()) {
-                                          "البوابة المكتشفة: ${telemetry.gatewayIp}"
-                                      } else {
-                                          "بانتظار اكتشاف بوابة الشبكة..."
-                                      },
-                                      color = KrotyCyan,
-                                      fontSize = 13.sp,
-                                      maxLines = 1,
-                                      softWrap = false
-                                  )
-                              }
-                          }
 
-                          IconButton(onClick = onRefreshRadar) {
-                              if (isProbing) {
-                                  CircularProgressIndicator(modifier = Modifier.size(22.dp), color = KrotyCyan, strokeWidth = 2.dp)
-                              } else {
-                                  Icon(Icons.Default.Refresh, contentDescription = "مزامنة", tint = KrotyCyan)
-                              }
-                          }
-                      }
-
-                      Spacer(modifier = Modifier.height(14.dp))
-                      HorizontalDivider(color = KrotyCardBorder)
-                      Spacer(modifier = Modifier.height(14.dp))
-
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceBetween
-                      ) {
-                          RadarMetricItem("قوة الإشارة", "${telemetry.signalQualityPercent}% (${telemetry.rssiDbm}dBm)", KrotyEmerald)
-                          RadarMetricItem(
-                              "بنق الراوتر",
-                              if (telemetry.gatewayPingMs >= 0) "${telemetry.gatewayPingMs} ms" else "--",
-                              KrotyCyan
-                          )
-                          RadarMetricItem(
-                              "بنق الإنترنت",
-                              if (telemetry.internetPingMs >= 0) "${telemetry.internetPingMs} ms" else "بوابة كابتف",
-                              if (telemetry.internetPingMs >= 0) KrotyEmerald else KrotyAmber
-                          )
-                      }
-
-                      Spacer(modifier = Modifier.height(8.dp))
-                      Text(
-                          text = "نقطة الوصول (BSSID): ${telemetry.bssid} • سرعة الربط: ${telemetry.linkSpeedMbps} Mbps",
-                          color = KrotyTextSecondary,
-                          fontSize = 11.sp,
-                          maxLines = 1,
-                          softWrap = false,
-                          overflow = TextOverflow.Ellipsis
-                      )
-                  }
-              }
-          }
-
-          @Composable
-          private fun RadarMetricItem(label: String, value: String, color: Color) {
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                  Text(text = label, color = KrotyTextSecondary, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Text(text = value, color = color, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
-              }
-          }
-
-          @Composable
-          private fun LiveSessionAndBalanceCard(
-              telemetry: WifiTelemetry,
-              activeVoucher: VoucherEntity?,
-              portalState: PortalUiState,
-              onOpenLoginPortal: () -> Unit,
-              onOpenStatusPortal: () -> Unit,
-              onFreezeSession: () -> Unit
-          ) {
-              Card(
-                  colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                  shape = RoundedCornerShape(18.dp),
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-              ) {
-                  Column(modifier = Modifier.padding(18.dp)) {
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceBetween,
-                          verticalAlignment = Alignment.CenterVertically
-                      ) {
-                          Text(
-                              text = "الجلسة الحية والرصيد",
-                              color = KrotyTextPrimary,
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 16.sp,
-                              maxLines = 1,
-                              softWrap = false
-                          )
-                          Surface(
-                              color = if (activeVoucher != null) KrotyEmerald.copy(alpha = 0.15f) else KrotyAmber.copy(alpha = 0.15f),
-                              shape = RoundedCornerShape(50)
-                          ) {
-                              Text(
-                                  text = if (activeVoucher != null) "كرت نشط: ${activeVoucher.code}" else "بدون كرت نشط",
-                                  color = if (activeVoucher != null) KrotyEmerald else KrotyAmber,
-                                  fontSize = 12.sp,
-                                  maxLines = 1,
-                                  softWrap = false,
-                                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                              )
-                          }
-                      }
-
-                      Spacer(modifier = Modifier.height(14.dp))
-
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceEvenly
-                      ) {
-                          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                              Text("الرصيد المتبقي (من البوابة)", color = KrotyTextSecondary, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                              Spacer(modifier = Modifier.height(4.dp))
-                              Text(
-                                  text = activeVoucher?.remainingMb?.let { String.format("%.1f MB", it) }
-                                      ?: portalState.liveRemainingMb,
-                                  color = KrotyCyan,
-                                  fontSize = 18.sp,
-                                  fontWeight = FontWeight.ExtraBold,
-                                  maxLines = 1,
-                                  softWrap = false
-                              )
-                          }
-                          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                              Text("الوقت المتبقي", color = KrotyTextSecondary, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                              Spacer(modifier = Modifier.height(4.dp))
-                              Text(
-                                  text = portalState.liveRemainingTime,
-                                  color = KrotyEmerald,
-                                  fontSize = 18.sp,
-                                  fontWeight = FontWeight.ExtraBold,
-                                  maxLines = 1,
-                                  softWrap = false
-                              )
-                          }
-                      }
-
-                      Spacer(modifier = Modifier.height(16.dp))
-
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.spacedBy(8.dp)
-                      ) {
-                          Button(
-                              onClick = onOpenLoginPortal,
-                              enabled = telemetry.gatewayIp.isNotBlank(),
-                              colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan),
-                              modifier = Modifier.weight(1f)
-                          ) {
-                              Icon(Icons.Default.Login, contentDescription = null, tint = KrotyDarkBg, modifier = Modifier.size(18.dp))
-                              Spacer(modifier = Modifier.width(6.dp))
-                              Text("بوابة الدخول", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
-                          }
-
-                          OutlinedButton(
-                              onClick = onOpenStatusPortal,
-                              enabled = telemetry.gatewayIp.isNotBlank(),
-                              modifier = Modifier.weight(1f)
-                          ) {
-                              Icon(Icons.Default.Analytics, contentDescription = null, tint = KrotyCyan, modifier = Modifier.size(18.dp))
-                              Spacer(modifier = Modifier.width(6.dp))
-                              Text("صفحة الرصيد", color = KrotyCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
-                          }
-                      }
-
-                      Spacer(modifier = Modifier.height(8.dp))
-
-                      OutlinedButton(
-                          onClick = onFreezeSession,
-                          enabled = telemetry.gatewayIp.isNotBlank(),
-                          colors = ButtonDefaults.outlinedButtonColors(contentColor = KrotyAmber),
-                          modifier = Modifier.fillMaxWidth()
-                      ) {
-                          Icon(Icons.Default.PauseCircle, contentDescription = null, tint = KrotyAmber)
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text(
-                              "تجميد الكرت مؤقتاً (خروج /logout لحفظ الرصيد)",
-                              color = KrotyAmber,
-                              fontSize = 13.sp,
-                              maxLines = 1,
-                              softWrap = false,
-                              overflow = TextOverflow.Ellipsis
-                          )
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun PortalQuickActionsCard(
-              gatewayIp: String,
-              onTouchToLearn: () -> Unit,
-              onRunWorkerSync: () -> Unit
-          ) {
-              Card(
-                  colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                  shape = RoundedCornerShape(18.dp),
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-              ) {
-                  Column(modifier = Modifier.padding(18.dp)) {
-                      Text(
-                          text = "أدوات التحكم المتقدمة بالبوابة (${gatewayIp.ifBlank { "غير متصل" }})",
-                          color = KrotyTextPrimary,
-                          fontWeight = FontWeight.Bold,
-                          fontSize = 15.sp,
-                          maxLines = 1,
-                          softWrap = false,
-                          overflow = TextOverflow.Ellipsis
-                      )
-                      Spacer(modifier = Modifier.height(10.dp))
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.spacedBy(8.dp)
-                      ) {
-                          FilledTonalButton(
-                              onClick = onTouchToLearn,
-                              enabled = gatewayIp.isNotBlank(),
-                              modifier = Modifier.weight(1f)
-                          ) {
-                              Icon(Icons.Default.TouchApp, contentDescription = null, modifier = Modifier.size(18.dp))
-                              Spacer(modifier = Modifier.width(6.dp))
-                              Text("تحديد الحقل باللمس", fontSize = 12.sp, maxLines = 1, softWrap = false)
-                          }
-                          FilledTonalButton(
-                              onClick = onRunWorkerSync,
-                              modifier = Modifier.weight(1f)
-                          ) {
-                              Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                              Spacer(modifier = Modifier.width(6.dp))
-                              Text("تحديث الإشعار", fontSize = 12.sp, maxLines = 1, softWrap = false)
-                          }
-                      }
-                  }
-              }
-          }
-
-          @SuppressLint("SetJavaScriptEnabled")
-          @Composable
-          fun RealPortalWebViewDialog(
-              viewModel: KrotyViewModel,
-              telemetry: WifiTelemetry,
-              portalState: PortalUiState,
-              activeVoucher: VoucherEntity?,
-              allVouchers: List<VoucherEntity>,
-              customSelector: String
-          ) {
-              var urlInput by remember(portalState.currentPortalUrl) { mutableStateOf(portalState.currentPortalUrl) }
-              var webViewRef by remember { mutableStateOf<WebView?>(null) }
-              var pageTitle by remember { mutableStateOf("بوابة المايكروتك الذكية") }
-              var loadProgress by remember { mutableIntStateOf(0) }
-              var isDesktopMode by remember { mutableStateOf(false) }
-              var showQuickVoucherDrawer by remember { mutableStateOf(false) }
-              var localTouchToLearn by remember(portalState.touchToLearnMode) { mutableStateOf(portalState.touchToLearnMode) }
-              var activeHost by remember(telemetry.gatewayIp) {
-                  mutableStateOf(telemetry.gatewayIp.ifBlank { "10.0.0.1" })
-              }
-              var manualQuickCode by remember(portalState.pendingAutoLoginCode, activeVoucher) {
-                  mutableStateOf(portalState.pendingAutoLoginCode ?: activeVoucher?.code ?: "")
-              }
-              var manualQuickPassword by remember(portalState.pendingAutoLoginPassword, activeVoucher) {
-                  mutableStateOf(portalState.pendingAutoLoginPassword.ifBlank { activeVoucher?.password ?: "" })
-              }
-              var hasLoadError by remember { mutableStateOf(false) }
-              var loadErrorDescription by remember { mutableStateOf("") }
-
-              Dialog(
-                  onDismissRequest = { viewModel.closePortalDialog() },
-                  properties = DialogProperties(usePlatformDefaultWidth = false)
-              ) {
-                  Surface(
-                      modifier = Modifier.fillMaxSize(),
-                      color = KrotyDarkBg
-                  ) {
-                      Column(modifier = Modifier.fillMaxSize()) {
-                          Column(
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .background(
-                                      Brush.verticalGradient(
-                                          colors = listOf(Color(0xFF162442), KrotyCardBg)
-                                      )
-                                  )
-                                  .padding(horizontal = 12.dp, vertical = 10.dp)
-                          ) {
-                              Row(
-                                  modifier = Modifier.fillMaxWidth(),
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.SpaceBetween
-                              ) {
-                                  Row(
-                                      verticalAlignment = Alignment.CenterVertically,
-                                      modifier = Modifier.weight(1f)
-                                  ) {
-                                      Box(
-                                          modifier = Modifier
-                                              .size(36.dp)
-                                              .clip(CircleShape)
-                                              .background(KrotyCyan.copy(alpha = 0.16f))
-                                              .border(1.dp, KrotyCyan.copy(alpha = 0.5f), CircleShape),
-                                          contentAlignment = Alignment.Center
-                                      ) {
-                                          Icon(
-                                              Icons.Default.Router,
-                                              contentDescription = null,
-                                              tint = KrotyCyan,
-                                              modifier = Modifier.size(20.dp)
-                                          )
-                                      }
-                                      Spacer(modifier = Modifier.width(10.dp))
-                                      Column(modifier = Modifier.weight(1f)) {
-                                          Row(verticalAlignment = Alignment.CenterVertically) {
-                                              Text(
-                                                  text = telemetry.ssid,
-                                                  color = KrotyTextPrimary,
-                                                  fontWeight = FontWeight.Bold,
-                                                  fontSize = 15.sp,
-                                                  maxLines = 1,
-                                                  softWrap = false,
-                                                  overflow = TextOverflow.Ellipsis
-                                              )
-                                              Spacer(modifier = Modifier.width(8.dp))
-                                              Surface(
-                                                  color = KrotyCyan.copy(alpha = 0.15f),
-                                                  shape = RoundedCornerShape(6.dp)
-                                              ) {
-                                                  Text(
-                                                      text = activeHost,
-                                                      color = KrotyCyan,
-                                                      fontSize = 11.sp,
-                                                      fontFamily = FontFamily.Monospace,
-                                                      maxLines = 1,
-                                                      softWrap = false,
-                                                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                  )
-                                              }
-                                          }
-                                          Text(
-                                              text = "$pageTitle • الرصيد: ${portalState.liveRemainingMb} • الوقت: ${portalState.liveRemainingTime}",
-                                              color = KrotyEmerald,
-                                              fontSize = 11.sp,
-                                              maxLines = 1,
-                                              softWrap = false,
-                                              overflow = TextOverflow.Ellipsis
-                                          )
-                                      }
-                                  }
-
-                                  Row(verticalAlignment = Alignment.CenterVertically) {
-                                      FilledTonalIconButton(
-                                          onClick = { showQuickVoucherDrawer = !showQuickVoucherDrawer },
-                                          modifier = Modifier.size(34.dp),
-                                          colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                              containerColor = if (showQuickVoucherDrawer) KrotyCyan else Color(0xFF1E2D4A)
-                                          )
-                                      ) {
-                                          Icon(
-                                              Icons.Default.Key,
-                                              contentDescription = "تبديل الكرت",
-                                              tint = if (showQuickVoucherDrawer) KrotyDarkBg else KrotyCyan,
-                                              modifier = Modifier.size(18.dp)
-                                          )
-                                      }
-                                      Spacer(modifier = Modifier.width(6.dp))
-                                      FilledTonalIconButton(
-                                          onClick = { viewModel.closePortalDialog() },
-                                          modifier = Modifier.size(34.dp),
-                                          colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                              containerColor = Color(0xFF331B24)
-                                          )
-                                      ) {
-                                          Icon(
-                                              Icons.Default.Close,
-                                              contentDescription = "إغلاق البوابة",
-                                              tint = KrotyCoralRed,
-                                              modifier = Modifier.size(18.dp)
-                                          )
-                                      }
-                                  }
-                              }
-
-                              AnimatedVisibility(visible = showQuickVoucherDrawer) {
-                                  Card(
-                                      colors = CardDefaults.cardColors(containerColor = Color(0xFF0E1628)),
-                                      shape = RoundedCornerShape(12.dp),
-                                      modifier = Modifier
-                                          .fillMaxWidth()
-                                          .padding(top = 8.dp)
-                                          .border(1.dp, KrotyCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                                  ) {
-                                      Column(modifier = Modifier.padding(10.dp)) {
-                                          Text(
-                                              "حقن وتبديل الكرت الفوري داخل البوابة:",
-                                              color = KrotyCyan,
-                                              fontSize = 12.sp,
-                                              fontWeight = FontWeight.Bold,
-                                              maxLines = 1,
-                                              softWrap = false
-                                          )
-                                          Spacer(modifier = Modifier.height(6.dp))
-                                          Row(
-                                              modifier = Modifier.fillMaxWidth(),
-                                              verticalAlignment = Alignment.CenterVertically
-                                          ) {
-                                              OutlinedTextField(
-                                                  value = manualQuickCode,
-                                                  onValueChange = { manualQuickCode = it },
-                                                  placeholder = { Text("اكتب أو اختر رقم الكرت...", fontSize = 12.sp) },
-                                                  singleLine = true,
-                                                  modifier = Modifier.weight(1f),
-                                                  textStyle = LocalTextStyle.current.copy(
-                                                      fontFamily = FontFamily.Monospace,
-                                                      fontWeight = FontWeight.Bold,
-                                                      fontSize = 14.sp
-                                                  )
-                                              )
-                                              Spacer(modifier = Modifier.width(8.dp))
-                                              Button(
-                                                  onClick = {
-                                                      if (manualQuickCode.isNotBlank()) {
-                                                          val script = MikroTikJsScripts.buildAutoLoginScript(
-                                                              voucherCode = manualQuickCode.trim(),
-                                                              password = manualQuickPassword,
-                                                              customSelector = customSelector
-                                                          )
-                                                          webViewRef?.evaluateJavascript(script, null)
-                                                          showQuickVoucherDrawer = false
-                                                      }
-                                                  },
-                                                  colors = ButtonDefaults.buttonColors(containerColor = KrotyEmerald)
-                                              ) {
-                                                  Icon(Icons.Default.Bolt, contentDescription = null, tint = KrotyDarkBg, modifier = Modifier.size(16.dp))
-                                                  Spacer(modifier = Modifier.width(4.dp))
-                                                  Text("حقن ودخول", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                                              }
-                                          }
-
-                                          if (allVouchers.isNotEmpty()) {
-                                              Spacer(modifier = Modifier.height(8.dp))
-                                              LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                  items(allVouchers.take(12)) { v ->
-                                                      FilterChip(
-                                                          selected = manualQuickCode == v.code,
-                                                          onClick = {
-                                                              manualQuickCode = v.code
-                                                              manualQuickPassword = v.password
-                                                          },
-                                                          label = {
-                                                              Text(
-                                                                  "${v.code} (${v.categoryLabel})",
-                                                                  fontSize = 11.sp,
-                                                                  maxLines = 1,
-                                                                  softWrap = false
-                                                              )
-                                                          }
-                                                      )
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-
-                              Spacer(modifier = Modifier.height(8.dp))
-
-                              Row(
-                                  modifier = Modifier.fillMaxWidth(),
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.spacedBy(4.dp)
-                              ) {
-                                  IconButton(
-                                      onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() },
-                                      modifier = Modifier.size(32.dp)
-                                  ) {
-                                      Icon(Icons.Default.ArrowForward, contentDescription = "رجوع", tint = KrotyTextPrimary, modifier = Modifier.size(18.dp))
-                                  }
-                                  IconButton(
-                                      onClick = {
-                                          hasLoadError = false
-                                          webViewRef?.reload()
-                                      },
-                                      modifier = Modifier.size(32.dp)
-                                  ) {
-                                      Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = KrotyCyan, modifier = Modifier.size(18.dp))
-                                  }
-                                  IconButton(
-                                      onClick = {
-                                          isDesktopMode = !isDesktopMode
-                                          webViewRef?.settings?.apply {
-                                              userAgentString = if (isDesktopMode) {
-                                                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                                              } else {
-                                                  null
-                                              }
-                                              useWideViewPort = true
-                                              loadWithOverviewMode = true
-                                          }
-                                          webViewRef?.reload()
-                                      },
-                                      modifier = Modifier.size(32.dp)
-                                  ) {
-                                      Icon(
-                                          if (isDesktopMode) Icons.Default.DesktopWindows else Icons.Default.PhoneAndroid,
-                                          contentDescription = "وضع العرض",
-                                          tint = if (isDesktopMode) KrotyAmber else KrotyTextSecondary,
-                                          modifier = Modifier.size(18.dp)
-                                      )
-                                  }
-
-                                  Surface(
-                                      color = Color(0xFF0A1020),
-                                      shape = RoundedCornerShape(10.dp),
-                                      modifier = Modifier
-                                          .weight(1f)
-                                          .border(1.dp, KrotyCardBorder, RoundedCornerShape(10.dp))
-                                  ) {
-                                      Row(
-                                          modifier = Modifier
-                                              .fillMaxWidth()
-                                              .padding(horizontal = 10.dp, vertical = 6.dp),
-                                          verticalAlignment = Alignment.CenterVertically
-                                      ) {
-                                          Icon(
-                                              Icons.Default.Language,
-                                              contentDescription = null,
-                                              tint = KrotyCyan,
-                                              modifier = Modifier.size(15.dp)
-                                          )
-                                          Spacer(modifier = Modifier.width(6.dp))
-                                          BasicTextField(
-                                              value = urlInput,
-                                              onValueChange = { urlInput = it },
-                                              singleLine = true,
-                                              textStyle = LocalTextStyle.current.copy(
-                                                  color = KrotyTextPrimary,
-                                                  fontSize = 12.sp,
-                                                  fontFamily = FontFamily.Monospace
-                                              ),
-                                              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                                              keyboardActions = KeyboardActions(
-                                                  onGo = {
-                                                      val target = if (urlInput.startsWith("http")) urlInput else "http://$urlInput"
-                                                      hasLoadError = false
-                                                      webViewRef?.loadUrl(target)
-                                                  }
-                                              ),
-                                              modifier = Modifier.weight(1f)
-                                          )
-                                      }
-                                  }
-
-                                  Button(
-                                      onClick = {
-                                          val target = if (urlInput.startsWith("http")) urlInput else "http://$urlInput"
-                                          hasLoadError = false
-                                          webViewRef?.loadUrl(target)
-                                      },
-                                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                      colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan),
-                                      modifier = Modifier.height(32.dp)
-                                  ) {
-                                      Text("فتح", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                                  }
-                              }
-
-                              Spacer(modifier = Modifier.height(8.dp))
-
-                              LazyRow(
-                                  modifier = Modifier.fillMaxWidth(),
-                                  horizontalArrangement = Arrangement.spacedBy(8.dp)
-                              ) {
-                                  item {
-                                      PortalActionChip(
-                                          label = "⚡ دخول فوري بالكرت",
-                                          color = KrotyEmerald,
-                                          onClick = {
-                                              val codeToInject = manualQuickCode.ifBlank {
-                                                  portalState.pendingAutoLoginCode ?: activeVoucher?.code ?: ""
-                                              }
-                                              if (codeToInject.isNotBlank()) {
-                                                  val script = MikroTikJsScripts.buildAutoLoginScript(
-                                                      voucherCode = codeToInject,
-                                                      password = manualQuickPassword,
-                                                      customSelector = customSelector
-                                                  )
-                                                  webViewRef?.evaluateJavascript(script, null)
-                                              } else {
-                                                  showQuickVoucherDrawer = true
-                                              }
-                                          }
-                                      )
-                                  }
-                                  item {
-                                      PortalActionChip(
-                                          label = "📊 صفحة الرصيد (/status)",
-                                          color = KrotyCyan,
-                                          onClick = {
-                                              val target = "http://$activeHost/status"
-                                              urlInput = target
-                                              hasLoadError = false
-                                              webViewRef?.loadUrl(target)
-                                          }
-                                      )
-                                  }
-                                  item {
-                                      PortalActionChip(
-                                          label = "🔑 صفحة الدخول (/login)",
-                                          color = KrotyTextPrimary,
-                                          onClick = {
-                                              val target = "http://$activeHost/login"
-                                              urlInput = target
-                                              hasLoadError = false
-                                              webViewRef?.loadUrl(target)
-                                          }
-                                      )
-                                  }
-                                  item {
-                                      PortalActionChip(
-                                          label = "❄️ تجميد الكرت (/logout)",
-                                          color = KrotyAmber,
-                                          onClick = {
-                                              val target = "http://$activeHost/logout"
-                                              urlInput = target
-                                              hasLoadError = false
-                                              webViewRef?.loadUrl(target)
-                                          }
-                                      )
-                                  }
-                                  item {
-                                      PortalActionChip(
-                                          label = if (localTouchToLearn) "🎯 المس مربع الكرت الآن" else "🎯 تحديد الحقل باللمس",
-                                          color = if (localTouchToLearn) KrotyEmerald else Color(0xFFB388FF),
-                                          onClick = {
-                                              localTouchToLearn = true
-                                              webViewRef?.evaluateJavascript(MikroTikJsScripts.buildTouchToLearnScript(), null)
-                                          }
-                                      )
-                                  }
-                                  item {
-                                      PortalActionChip(
-                                          label = "🌐 كشف تحويل الشبكة",
-                                          color = KrotyCyan,
-                                          onClick = {
-                                              val fallback = "http://${telemetry.gatewayIp.ifBlank { "10.0.0.1" }}/"
-                                              urlInput = fallback
-                                              hasLoadError = false
-                                              webViewRef?.loadUrl(fallback)
-                                          }
-                                      )
-                                  }
-                              }
-                          }
-
-                          if (loadProgress in 1..99) {
-                              LinearProgressIndicator(
-                                  progress = { loadProgress / 100f },
-                                  color = KrotyCyan,
-                                  trackColor = KrotyCardBg,
+                              IconButton(
+                                  onClick = {
+                                      currentUrlDisplay = capturedWebView?.url ?: currentUrlDisplay
+                                      capturedWebView?.reload()
+                                  },
                                   modifier = Modifier
-                                      .fillMaxWidth()
-                                      .height(3.dp)
-                              )
-                          } else {
-                              HorizontalDivider(color = KrotyCardBorder)
-                          }
-
-                          if (localTouchToLearn) {
-                              Surface(
-                                  color = Color(0xFF281847),
-                                  modifier = Modifier.fillMaxWidth()
+                                      .size(34.dp)
+                                      .clip(RoundedCornerShape(8.dp))
+                                      .background(Color(0xFF1E293B))
                               ) {
-                                  Row(
-                                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                      verticalAlignment = Alignment.CenterVertically
-                                  ) {
-                                      Icon(Icons.Default.TouchApp, contentDescription = null, tint = Color(0xFFD1C4E9), modifier = Modifier.size(18.dp))
-                                      Spacer(modifier = Modifier.width(8.dp))
-                                      Text(
-                                          "وضع التعلّم باللمس نشط: المس مربع إدخال رقم الكرت داخل الصفحة ليتم حفظه تلقائياً لهذه الشبكة.",
-                                          color = Color.White,
-                                          fontSize = 12.sp,
-                                          modifier = Modifier.weight(1f)
-                                      )
-                                      TextButton(onClick = { localTouchToLearn = false }) {
-                                          Text("إلغاء", color = KrotyAmber, fontSize = 12.sp, maxLines = 1, softWrap = false)
-                                      }
-                                  }
+                                  Icon(
+                                      Icons.Default.Refresh,
+                                      contentDescription = "تحديث",
+                                      tint = Color(0xFF00E5FF),
+                                      modifier = Modifier.size(16.dp)
+                                  )
                               }
-                          }
 
-                          portalState.statusBannerMessage?.let { banner ->
-                              Surface(
-                                  color = Color(0xFF102838),
-                                  modifier = Modifier.fillMaxWidth()
+                              Row(
+                                  modifier = Modifier
+                                      .weight(1f)
+                                      .clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF090D16))
+                                      .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                                      .padding(horizontal = 10.dp, vertical = 7.dp),
+                                  verticalAlignment = Alignment.CenterVertically
                               ) {
-                                  Row(
-                                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                      verticalAlignment = Alignment.CenterVertically
-                                  ) {
-                                      Icon(Icons.Default.Info, contentDescription = null, tint = KrotyCyan, modifier = Modifier.size(16.dp))
-                                      Spacer(modifier = Modifier.width(8.dp))
-                                      Text(
-                                          text = banner,
-                                          color = KrotyCyan,
-                                          fontSize = 12.sp,
-                                          modifier = Modifier.weight(1f)
-                                      )
-                                      IconButton(onClick = { viewModel.clearBanner() }, modifier = Modifier.size(24.dp)) {
-                                          Icon(Icons.Default.Close, contentDescription = null, tint = KrotyTextSecondary, modifier = Modifier.size(14.dp))
-                                      }
-                                  }
-                              }
-                          }
-
-                          Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                              AndroidView(
-                                  modifier = Modifier.fillMaxSize(),
-                                  factory = { ctx ->
-                                      viewModel.bindWifiForPortal()
-                                      WebView(ctx).apply {
-                                          CookieManager.getInstance().setAcceptCookie(true)
-                                          CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                                          settings.javaScriptEnabled = true
-                                          settings.domStorageEnabled = true
-                                          settings.loadWithOverviewMode = true
-                                          settings.useWideViewPort = true
-                                          settings.builtInZoomControls = true
-                                          settings.displayZoomControls = false
-                                          settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                          settings.cacheMode = WebSettings.LOAD_DEFAULT
-                                          settings.javaScriptCanOpenWindowsAutomatically = true
-
-                                          addJavascriptInterface(
-                                              object {
-                                                  @JavascriptInterface
-                                                  fun onHtmlExtracted(url: String, html: String) {
-                                                      viewModel.onWebViewHtmlExtracted(url, html)
-                                                  }
-
-                                                  @JavascriptInterface
-                                                  fun onFieldSelectorLearned(selector: String) {
-                                                      localTouchToLearn = false
-                                                      viewModel.saveCustomFieldSelector(selector)
-                                                  }
-
-                                                  @JavascriptInterface
-                                                  fun onMaxLengthDetected(maxLen: Int) {
-                                                  }
-
-                                                  @JavascriptInterface
-                                                  fun onAutoLoginInjected(code: String) {
-                                                  }
-                                              },
-                                              "KrotyBridge"
-                                          )
-
-                                          webChromeClient = object : WebChromeClient() {
-                                              override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                                  loadProgress = newProgress
-                                              }
-
-                                              override fun onReceivedTitle(view: WebView?, title: String?) {
-                                                  if (!title.isNullOrBlank()) {
-                                                      pageTitle = title
-                                                  }
-                                              }
-                                          }
-
-                                          webViewClient = object : WebViewClient() {
-                                              override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                                  super.onPageStarted(view, url, favicon)
-                                                  if (!url.isNullOrBlank()) {
-                                                      urlInput = url
-                                                      Uri.parse(url).host?.let { host ->
-                                                          if (host.isNotBlank() && !host.contains("gstatic") && !host.contains("neverssl")) {
-                                                              activeHost = host
-                                                          }
-                                                      }
-                                                  }
-                                              }
-
-                                              override fun onPageFinished(view: WebView?, url: String?) {
-                                                  super.onPageFinished(view, url)
-                                                  val currentUrl = url ?: ""
-                                                  urlInput = currentUrl
-
-                                                  Uri.parse(currentUrl).host?.let { host ->
-                                                      if (host.isNotBlank() && !host.contains("gstatic") && !host.contains("neverssl")) {
-                                                          activeHost = host
-                                                      }
-                                                  }
-
-                                                  view?.evaluateJavascript(
-                                                      "(function(){ if(window.KrotyBridge && document.documentElement){ window.KrotyBridge.onHtmlExtracted(window.location.href, document.documentElement.outerHTML); } })();",
-                                                      null
-                                                  )
-                                                  view?.evaluateJavascript(
-                                                      MikroTikJsScripts.buildInputMaxLengthDetectorScript(),
-                                                      null
-                                                  )
-
-                                                  if (localTouchToLearn) {
-                                                      view?.evaluateJavascript(
-                                                          MikroTikJsScripts.buildTouchToLearnScript(),
-                                                          null
-                                                      )
-                                                  }
-
-                                                  val pendingCode = portalState.pendingAutoLoginCode
-                                                  if (!pendingCode.isNullOrBlank() && !currentUrl.contains("/status")) {
-                                                      val script = MikroTikJsScripts.buildAutoLoginScript(
-                                                          voucherCode = pendingCode,
-                                                          password = portalState.pendingAutoLoginPassword,
-                                                          customSelector = customSelector
-                                                      )
-                                                      view?.evaluateJavascript(script, null)
-                                                  }
-                                              }
-
-                                              override fun onReceivedError(
-                                                  view: WebView?,
-                                                  request: WebResourceRequest?,
-                                                  error: WebResourceError?
-                                              ) {
-                                                  super.onReceivedError(view, request, error)
-                                                  if (request?.isForMainFrame == true) {
-                                                      hasLoadError = true
-                                                      loadErrorDescription = error?.description?.toString() ?: "تعذر الوصول لبوابة الشبكة"
-                                                  }
-                                              }
-                                          }
-
-                                          loadUrl(portalState.currentPortalUrl)
-                                          webViewRef = this
-                                      }
-                                  }
-                              )
-
-                              if (hasLoadError) {
                                   Box(
                                       modifier = Modifier
-                                          .fillMaxSize()
-                                          .background(KrotyDarkBg.copy(alpha = 0.95f))
-                                          .padding(24.dp),
-                                      contentAlignment = Alignment.Center
-                                  ) {
-                                      Card(
-                                          colors = CardDefaults.cardColors(containerColor = KrotyCardBg),
-                                          shape = RoundedCornerShape(18.dp),
-                                          modifier = Modifier
-                                              .fillMaxWidth()
-                                              .border(1.dp, KrotyCardBorder, RoundedCornerShape(18.dp))
-                                      ) {
-                                          Column(
-                                              modifier = Modifier.padding(20.dp),
-                                              horizontalAlignment = Alignment.CenterHorizontally
-                                          ) {
-                                              Icon(
-                                                  Icons.Default.WifiFind,
-                                                  contentDescription = null,
-                                                  tint = KrotyAmber,
-                                                  modifier = Modifier.size(48.dp)
-                                              )
-                                              Spacer(modifier = Modifier.height(12.dp))
-                                              Text(
-                                                  "تعذر فتح الرابط المباشر للبوابة",
-                                                  color = KrotyTextPrimary,
-                                                  fontWeight = FontWeight.Bold,
-                                                  fontSize = 16.sp
-                                              )
-                                              Spacer(modifier = Modifier.height(6.dp))
-                                              Text(
-                                                  "بعض شبكات المايكروتك تستخدم اسم نطاق خاص بدلاً من الرقم ($activeHost). اضغط على الزر أدناه لاكتشاف صفحة التحويل تلقائياً.",
-                                                  color = KrotyTextSecondary,
-                                                  fontSize = 13.sp,
-                                                  textAlign = TextAlign.Center
-                                              )
-                                              Spacer(modifier = Modifier.height(6.dp))
-                                              Text(
-                                                  loadErrorDescription,
-                                                  color = KrotyCoralRed,
-                                                  fontSize = 11.sp
-                                              )
-                                              Spacer(modifier = Modifier.height(16.dp))
-                                              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                  Button(
-                                                      onClick = {
-                                                          hasLoadError = false
-                                                          viewModel.bindWifiForPortal()
-                                                          webViewRef?.loadUrl("http://${telemetry.gatewayIp.ifBlank { "10.0.0.1" }}/login")
-                                                      },
-                                                      colors = ButtonDefaults.buttonColors(containerColor = KrotyCyan)
-                                                  ) {
-                                                      Text("إعادة المحاولة", color = KrotyDarkBg, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-                                                  }
-                                                  OutlinedButton(
-                                                      onClick = {
-                                                          hasLoadError = false
-                                                          viewModel.bindWifiForPortal()
-                                                          webViewRef?.loadUrl("http://neverssl.com")
-                                                      }
-                                                  ) {
-                                                      Text("كشف التحويل التلقائي", color = KrotyEmerald, maxLines = 1, softWrap = false)
-                                                  }
-                                              }
+                                          .size(8.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF00E676))
+                                  )
+                                  Spacer(modifier = Modifier.width(6.dp))
+                                  Text(
+                                      text = capturedWebView?.url ?: currentUrlDisplay,
+                                      color = Color(0xFF00E5FF),
+                                      fontFamily = FontFamily.Monospace,
+                                      fontSize = 11.sp,
+                                      maxLines = 1,
+                                      overflow = TextOverflow.Ellipsis,
+                                      modifier = Modifier.weight(1f)
+                                  )
+                              }
+
+                              IconButton(
+                                  onClick = {
+                                      isDesktopMode = !isDesktopMode
+                                      capturedWebView?.settings?.apply {
+                                          userAgentString = if (isDesktopMode) {
+                                              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                                          } else {
+                                              null
                                           }
+                                          useWideViewPort = true
+                                          loadWithOverviewMode = true
                                       }
+                                      capturedWebView?.reload()
+                                  },
+                                  modifier = Modifier
+                                      .size(34.dp)
+                                      .clip(RoundedCornerShape(8.dp))
+                                      .background(if (isDesktopMode) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B))
+                              ) {
+                                  Icon(
+                                      Icons.Default.Computer,
+                                      contentDescription = "وضع الكمبيوتر",
+                                      tint = if (isDesktopMode) Color(0xFF00E5FF) else Color(0xFF94A3B8),
+                                      modifier = Modifier.size(16.dp)
+                                  )
+                              }
+                          }
+
+                          Row(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .horizontalScroll(rememberScrollState()),
+                              horizontalArrangement = Arrangement.spacedBy(8.dp),
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              val extractHost: () -> String = {
+                                  val u = capturedWebView?.url ?: "http://10.0.0.1"
+                                  try {
+                                      val uri = android.net.Uri.parse(u)
+                                      if (!uri.host.isNullOrBlank()) "${uri.scheme ?: "http"}://${uri.host}" else "http://10.0.0.1"
+                                  } catch (_: Exception) {
+                                      "http://10.0.0.1"
                                   }
                               }
+
+                              AssistChip(
+                                  onClick = {
+                                      val target = "${extractHost()}/status"
+                                      currentUrlDisplay = target
+                                      capturedWebView?.loadUrl(target)
+                                  },
+                                  label = {
+                                      Text("📊 صفحة الرصيد (/status)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                  },
+                                  colors = AssistChipDefaults.assistChipColors(
+                                      containerColor = Color(0xFF1E293B),
+                                      labelColor = Color(0xFF00E5FF)
+                                  ),
+                                  border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
+                              )
+
+                              AssistChip(
+                                  onClick = {
+                                      val target = "${extractHost()}/login"
+                                      currentUrlDisplay = target
+                                      capturedWebView?.loadUrl(target)
+                                  },
+                                  label = {
+                                      Text("🔑 صفحة الدخول (/login)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                  },
+                                  colors = AssistChipDefaults.assistChipColors(
+                                      containerColor = Color(0xFF1E293B),
+                                      labelColor = Color(0xFF00E676)
+                                  ),
+                                  border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f))
+                              )
+
+                              AssistChip(
+                                  onClick = {
+                                      val target = "${extractHost()}/logout"
+                                      currentUrlDisplay = target
+                                      capturedWebView?.loadUrl(target)
+                                  },
+                                  label = {
+                                      Text("❄️ تجميد الكرت (/logout)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                  },
+                                  colors = AssistChipDefaults.assistChipColors(
+                                      containerColor = Color(0xFF1E293B),
+                                      labelColor = Color(0xFFFF5252)
+                                  ),
+                                  border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.4f))
+                              )
+
+                              AssistChip(
+                                  onClick = {
+                                      capturedWebView?.loadUrl("http://neverssl.com")
+                                  },
+                                  label = {
+                                      Text("🌐 كشف بوابة الشبكة", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                  },
+                                  colors = AssistChipDefaults.assistChipColors(
+                                      containerColor = Color(0xFF1E293B),
+                                      labelColor = Color(0xFFFFB300)
+                                  ),
+                                  border = BorderStroke(1.dp, Color(0xFFFFB300).copy(alpha = 0.4f))
+                              )
                           }
                       }
                   }
-              }
-          }
 
-          @Composable
-          private fun PortalActionChip(
-              label: String,
-              color: Color,
-              onClick: () -> Unit
-          ) {
-              Surface(
-                  color = color.copy(alpha = 0.14f),
-                  shape = RoundedCornerShape(50),
-                  modifier = Modifier
-                      .clip(RoundedCornerShape(50))
-                      .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(50))
-                      .clickable(onClick = onClick)
-              ) {
-                  Text(
-                      text = label,
-                      color = color,
-                      fontSize = 12.sp,
-                      fontWeight = FontWeight.Bold,
-                      maxLines = 1,
-                      softWrap = false,
-                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                  androidx.compose.ui.viewinterop.AndroidView(
+                      factory = { ctx ->
+                          factory(ctx).also { view ->
+                              if (view is android.webkit.WebView) {
+                                  capturedWebView = view
+                                  currentUrlDisplay = view.url ?: currentUrlDisplay
+                              }
+                          }
+                      },
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .weight(1f),
+                      update = { view ->
+                          if (view is android.webkit.WebView) {
+                              capturedWebView = view
+                              if (!view.url.isNullOrBlank()) {
+                                  currentUrlDisplay = view.url ?: currentUrlDisplay
+                              }
+                          }
+                          update(view)
+                      }
                   )
               }
           }
           '''
+              r_code = r_code.rstrip() + "\n\n" + cockpit_appendix.strip() + "\n"
+              with open(radar_path, "w", encoding="utf-8") as f:
+                  f.write(r_code)
 
-          with open("app/src/main/java/com/example/ui/screens/RadarScreen.kt", "w", encoding="utf-8") as f:
-              f.write("\n".join(line[10:] if line.startswith("          ") else line for line in radar_code.splitlines()).strip() + "\n")
-          print("Force-updated RadarScreen.kt!")
-
-          # 4. Update MainActivity.kt Title & Bottom Navigation Labels so they never wrap
-          main_act_path = "app/src/main/java/com/example/MainActivity.kt"
-          if os.path.exists(main_act_path):
-              with open(main_act_path, "r", encoding="utf-8") as f:
-                  m_text = f.read()
-              m_text = m_text.replace("كروتي نت • Kroty Net", "كروتي نت • Kroty Pro v3.2")
-              m_text = m_text.replace('Text("الرادار والبوابة")', 'Text("الرادار", maxLines = 1, softWrap = false)')
-              m_text = m_text.replace('Text("الماسح")', 'Text("الماسح", maxLines = 1, softWrap = false)')
-              m_text = m_text.replace('Text("المحفظة")', 'Text("المحفظة", maxLines = 1, softWrap = false)')
-              m_text = m_text.replace('Text("الإعدادات")', 'Text("الإعدادات", maxLines = 1, softWrap = false)')
-              with open(main_act_path, "w", encoding="utf-8") as f:
-                  f.write(m_text)
-              print("Updated MainActivity.kt to v3.2!")
-
-          # 5. Update WalletScreen.kt so buttons never wrap vertically
-          wallet_path = "app/src/main/java/com/example/ui/screens/WalletScreen.kt"
-          if os.path.exists(wallet_path):
-              with open(wallet_path, "r", encoding="utf-8") as f:
-                  w_text = f.read()
-              w_text = w_text.replace(
-                  'Text("اتصال بالبوابة", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)',
-                  'Text("اتصال فوري", color = KrotyDarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)'
-              )
-              with open(wallet_path, "w", encoding="utf-8") as f:
-                  f.write(w_text)
-              print("Updated WalletScreen.kt!")
-          PYEOF
+          for p in ['setup_part1.py', 'setup_part2.py', 'setup_part3.py']:
+              if os.path.exists(p):
+                  os.remove(p)
+          EOF
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app
-          git commit -m "Force update ScannerScreen, RadarScreen, MainActivity, WalletScreen to v3.2 [skip ci]" || true
-          git push || true
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Upgrade to Kroty Pro v3.2: Tab-scoped camera release & Pro Portal Cockpit"
+            git push || true
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -2049,27 +910,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle 8.10.2
-        uses: gradle/actions/setup-gradle@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.9'
 
       - name: Build Debug APK with Smart Error Summary
         run: |
           set +e
-          gradle assembleDebug --no-daemon > build.log 2>&1
+          gradle assembleDebug --no-daemon --stacktrace > build.log 2>&1
           EXIT_CODE=$?
           cat build.log
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "### ❌ ملخص الخطأ البرمجي (انسخ هذه الأسطر فقط):" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ ملخص أخطاء البناء (انسخ هذا النص فقط وأرسله لي):" >> $GITHUB_STEP_SUMMARY
             echo '```text' >> $GITHUB_STEP_SUMMARY
-            grep -E "^e: |FAILURE:|What went wrong:" -A 4 build.log | head -n 35 >> $GITHUB_STEP_SUMMARY
+            grep -E "^e: |FAILURE:|What went wrong:|^\* What went wrong:" -A 4 build.log | head -n 35 >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             exit $EXIT_CODE
+          else
+            echo "### ✅ تم بناء تطبيق كروتي نت Kroty Pro v3.2 بنجاح!" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "### ✅ تم بناء تطبيق كروتي نت Pro v3.2 بنجاح!" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload Installable APK
+      - name: Upload Real APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: KrotyNet-Real-APK
