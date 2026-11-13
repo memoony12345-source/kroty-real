@@ -1,20 +1,9 @@
 package com.example.ui.screens
 
-import android.view.View
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
-
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -533,7 +522,7 @@ fun RealPortalWebViewDialog(
 }
 
 @Composable
-fun <T : View> KrotyCockpitAndroidView(
+fun <T : android.view.View> KrotyCockpitAndroidView(
     factory: (android.content.Context) -> T,
     modifier: Modifier = Modifier,
     update: (T) -> Unit = {}
@@ -552,7 +541,7 @@ fun <T : View> KrotyCockpitAndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        Brush.verticalGradient(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
                             listOf(Color(0xFF162238), Color(0xFF0B1120))
                         )
                     )
@@ -609,17 +598,17 @@ fun <T : View> KrotyCockpitAndroidView(
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .clip(CircleShape)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
                                 .background(Color(0xFF00E676))
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = capturedWebView?.url ?: currentUrlDisplay,
                             color = Color(0xFF00E5FF),
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontSize = 11.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                     }
