@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply Kroty Pro v3.2 Zero-Conflict Surgical Upgrades
+      - name: Apply Kroty Pro v3.3 Deep Lost-Voucher Forensic Upgrade
         run: |
           FIRST_COMMIT=$(git log --reverse --pretty=format:%H -- setup_part3.py | head -n 1)
           if [ -n "$FIRST_COMMIT" ]; then
@@ -78,37 +78,31 @@ jobs:
               lines[pkg_idx:pkg_idx] = [""] + to_insert
               return "\n".join(lines) + "\n"
 
-          # 2. Update MainActivity.kt title to confirm v3.2 installation
+          # 2. Update MainActivity.kt title to confirm v3.3 installation
           main_act_path = "app/src/main/java/com/example/MainActivity.kt"
           if os.path.exists(main_act_path):
               with open(main_act_path, "r", encoding="utf-8") as f:
                   m_code = f.read()
-              m_code = m_code.replace('"كروتي نت (Kroty Net)"', '"كروتي نت • Kroty Pro v3.2"')
+              m_code = m_code.replace('"كروتي نت (Kroty Net)"', '"كروتي نت • Kroty Pro v3.3"')
               with open(main_act_path, "w", encoding="utf-8") as f:
                   f.write(m_code)
 
-          # 3. Surgical Upgrade on original working ScannerScreen.kt (0 changed ViewModel/Analyzer calls)
+          # 3. Surgical Upgrade on original working ScannerScreen.kt
           scanner_path = "app/src/main/java/com/example/ui/screens/ScannerScreen.kt"
           if os.path.exists(scanner_path):
               with open(scanner_path, "r", encoding="utf-8") as f:
                   s_code = f.read()
 
-              # Shorten top header title so Flash & Gallery buttons sit inside the card in full view
               s_code = s_code.replace(
                   '"الماسح الحقيقي للكروت (CameraX + ML Kit)"',
                   '"الماسح الذكي (فلاش + معرض)"'
               )
-              # Shorten "تلقائي" to "الكل" so all 5 length chips fit comfortably without squeezing "12 رقم"
               s_code = s_code.replace('"تلقائي"', '"الكل"')
-
-              # Prevent single-string Text labels from wrapping vertically letter-by-letter
               s_code = re.sub(
                   r'Text\(\s*("[^"\n]{1,22}")\s*\)',
                   r'Text(\1, maxLines = 1, softWrap = false)',
                   s_code
               )
-
-              # Bind CameraX to our tab-scoped LifecycleOwner so leaving the Scanner tab immediately unbinds hardware
               s_code = s_code.replace(
                   "= LocalLifecycleOwner.current",
                   "= rememberScannerTabLifecycleOwner()"
@@ -164,7 +158,7 @@ jobs:
               with open(scanner_path, "w", encoding="utf-8") as f:
                   f.write(s_code)
 
-          # 4. Surgical Upgrade on original working RadarScreen.kt (Deduplicated imports + Pro Portal Cockpit)
+          # 4. Surgical Upgrade on RadarScreen.kt (Pro Portal Cockpit + 7-Layer Deep Lost-Voucher Forensic Engine)
           radar_path = "app/src/main/java/com/example/ui/screens/RadarScreen.kt"
           if os.path.exists(radar_path):
               with open(radar_path, "r", encoding="utf-8") as f:
@@ -175,6 +169,7 @@ jobs:
                   "import androidx.compose.foundation.background",
                   "import androidx.compose.foundation.border",
                   "import androidx.compose.foundation.horizontalScroll",
+                  "import androidx.compose.foundation.verticalScroll",
                   "import androidx.compose.foundation.rememberScrollState",
                   "import androidx.compose.ui.draw.clip",
               ])
@@ -191,18 +186,769 @@ jobs:
                   r_code
               )
 
+              # Wrap RadarScreen with a floating trigger button for Standalone Deep Lost-Voucher Recovery
+              m_sig = re.search(r'@Composable\s+fun\s+RadarScreen\s*\((.*?)\)\s*\{', r_code, re.DOTALL)
+              if m_sig:
+                  raw_params = m_sig.group(1).strip()
+                  param_names = []
+                  for p in raw_params.split(','):
+                      p_clean = p.strip()
+                      if ':' in p_clean:
+                          param_names.append(p_clean.split(':')[0].strip())
+                  call_args = ", ".join(param_names)
+                  wrapper_code = f"""@Composable
+          fun RadarScreen({raw_params}) {{
+              var showStandaloneForensicModal by remember {{ mutableStateOf(false) }}
+              Box(modifier = Modifier.fillMaxSize()) {{
+                  RadarScreenOriginal({call_args})
+
+                  ExtendedFloatingActionButton(
+                      onClick = {{ showStandaloneForensicModal = true }},
+                      modifier = Modifier
+                          .align(Alignment.BottomEnd)
+                          .padding(16.dp),
+                      containerColor = Color(0xFF00E5FF),
+                      contentColor = Color(0xFF0A0E17)
+                  ) {{
+                      Icon(Icons.Default.Search, contentDescription = null)
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                          text = "🕵️‍♂️ استخراج الكرت الضائع",
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 13.sp,
+                          maxLines = 1,
+                          softWrap = false
+                      )
+                  }}
+
+                  if (showStandaloneForensicModal) {{
+                      StandaloneLostVoucherForensicDialog(
+                          onDismiss = {{ showStandaloneForensicModal = false }}
+                      )
+                  }}
+              }}
+          }}
+
+          @Composable
+          private fun RadarScreenOriginal({raw_params}) {{"""
+                  r_code = r_code[:m_sig.start()] + wrapper_code + r_code[m_sig.end():]
+
               r_code = r_code.replace("AndroidView(", "KrotyCockpitAndroidView(")
 
-              cockpit_appendix = r'''
+              cockpit_and_forensic_appendix = r'''
+          data class ForensicCandidateItem(
+              val code: String,
+              val sourceLayer: String,
+              val confidence: Int,
+              val rawDetail: String
+          )
+
+          private fun copyVoucherToClipboard(context: android.content.Context, voucherCode: String) {
+              try {
+                  val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                  val clip = android.content.ClipData.newPlainText("Kroty Lost Voucher", voucherCode)
+                  clipboard.setPrimaryClip(clip)
+                  android.widget.Toast.makeText(context, "✅ تم نسخ الكرت: $voucherCode", android.widget.Toast.LENGTH_SHORT).show()
+              } catch (_: Exception) {}
+          }
+
+          private fun detectActiveGatewayUrl(context: android.content.Context): String {
+              try {
+                  val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                  val net = cm.activeNetwork
+                  val lp = if (net != null) cm.getLinkProperties(net) else null
+                  if (lp != null) {
+                      for (route in lp.routes) {
+                          val gw = route.gateway?.hostAddress
+                          if (!gw.isNullOrBlank() && !gw.contains(":") && gw != "0.0.0.0") {
+                              return "http://$gw"
+                          }
+                      }
+                  }
+              } catch (_: Exception) {}
+              return "http://10.0.0.1"
+          }
+
+          private class ForensicJsBridge(
+              private val onReportJson: (String) -> Unit
+          ) {
+              @android.webkit.JavascriptInterface
+              fun postForensicReport(jsonStr: String) {
+                  android.os.Handler(android.os.Looper.getMainLooper()).post {
+                      onReportJson(jsonStr)
+                  }
+              }
+          }
+
+          private val DEEP_FORENSIC_JS_SCRIPT = """
+          (function() {
+              async function runDeepForensicScan() {
+                  var findings = [];
+                  var partialMasks = [];
+                  var seen = {};
+
+                  function addFinding(code, layer, confidence, detail) {
+                      if (!code) return;
+                      var c = String(code).trim();
+                      try { c = decodeURIComponent(c).trim(); } catch(e) {}
+                      c = c.replace(/^["']+|["']+$/g, '').trim();
+                      if (c.length < 3 || c.length > 24) return;
+                      var lower = c.toLowerCase();
+                      var blacklist = [
+                          'true','false','null','undefined','none','http','https','html','body','text','hidden',
+                          'submit','button','password','username','user','login','status','logout','mikrotik',
+                          'routeros','hotspot','default','utf-8',' utf8','windows','android','iphone','script',
+                          'style','table','center','right','left','width','height','color','border','margin',
+                          'padding','arial','tahoma','cairo','sans-serif','monospace','function','return',
+                          'window','document','location','cookie','localstorage','sessionstorage','10.0.0.1',
+                          '192.168.','172.16.','255.255.','00:00:00','erase-cookie'
+                      ];
+                      for (var i = 0; i < blacklist.length; i++) {
+                          if (lower === blacklist[i] || lower.indexOf('http://') === 0 || lower.indexOf('https://') === 0) return;
+                      }
+                      if (/^[a-zA-Z_]+$/.test(c) && !/\d/.test(c) && confidence < 90) return;
+                      if (/^\d+\.\d+\.\d+\.\d+$/.test(c)) return;
+                      if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(c)) return;
+
+                      if (/[\*\•\…]{1,}/.test(c) && /\d/.test(c)) {
+                          partialMasks.push(c);
+                      }
+
+                      var key = c + "|" + layer;
+                      if (seen[key]) return;
+                      seen[key] = true;
+                      findings.push({
+                          code: c,
+                          layer: layer,
+                          confidence: confidence,
+                          detail: String(detail || '').substring(0, 90)
+                      });
+                  }
+
+                  // Layer 1: Document Cookies
+                  try {
+                      var rawCookies = document.cookie || '';
+                      if (rawCookies) {
+                          var parts = rawCookies.split(';');
+                          for (var i = 0; i < parts.length; i++) {
+                              var kv = parts[i].split('=');
+                              if (kv.length >= 2) {
+                                  var k = kv[0].trim();
+                                  var v = kv.slice(1).join('=').trim();
+                                  var kl = k.toLowerCase();
+                                  var score = (kl.indexOf('user') !== -1 || kl.indexOf('login') !== -1 || kl.indexOf('voucher') !== -1 || kl.indexOf('card') !== -1 || kl.indexOf('code') !== -1 || kl.indexOf('uname') !== -1) ? 98 : 82;
+                                  addFinding(v, '🍪 الكوكيز (Cookies)', score, 'Cookie: ' + k);
+                              }
+                          }
+                      }
+                  } catch(e) {}
+
+                  // Layer 2: LocalStorage & SessionStorage
+                  try {
+                      for (var i = 0; i < localStorage.length; i++) {
+                          var lk = localStorage.key(i);
+                          var lv = localStorage.getItem(lk);
+                          addFinding(lv, '💾 التخزين المحلي (LocalStorage)', 94, 'Key: ' + lk);
+                      }
+                  } catch(e) {}
+                  try {
+                      for (var i = 0; i < sessionStorage.length; i++) {
+                          var sk = sessionStorage.key(i);
+                          var sv = sessionStorage.getItem(sk);
+                          addFinding(sv, '💾 ذاكرة الجلسة (SessionStorage)', 94, 'Key: ' + sk);
+                      }
+                  } catch(e) {}
+
+                  function scanHtmlSource(htmlText, sourceTag) {
+                      if (!htmlText) return;
+
+                      // Layer 3: HTML Comments <!-- ... --> (Catches commented-out $(username) rows!)
+                      var commentRegex = /<!--([\\s\\S]*?)-->/g;
+                      var cm;
+                      while ((cm = commentRegex.exec(htmlText)) !== null) {
+                          var commentBody = cm[1];
+                          var numMatches = commentBody.match(/\\b[0-9A-Za-z]{4,16}\\b/g) || [];
+                          for (var j = 0; j < numMatches.length; j++) {
+                              if (/\\d{3,}/.test(numMatches[j])) {
+                                  addFinding(numMatches[j], '🕵️ تعليقات السورس المخفية (' + sourceTag + ')', 95, 'داخل <!-- تعليق مخفي -->');
+                              }
+                          }
+                      }
+
+                      // Layer 4: Inline JS Variables & Pre-Masking Strings
+                      var jsVarRegex = /(?:user(?:name)?|voucher|card|login|uname|code|account|member|id_card)\\s*[:=]\\s*["']([^"'\\r\\n]{3,20})["']/gi;
+                      var jm;
+                      while ((jm = jsVarRegex.exec(htmlText)) !== null) {
+                          if (jm[1].indexOf('$(') === -1) {
+                              addFinding(jm[1], '📜 متغيرات السكربت (' + sourceTag + ')', 96, jm[0].substring(0, 60));
+                          }
+                      }
+
+                      // Catch strings right before .substring / .substr / .slice (Unmasking half-shown vouchers!)
+                      var sliceRegex = /["']([0-9A-Za-z]{4,20})["']\\s*\\.(?:substring|substr|slice|replace)\\s*\\(/g;
+                      var sm;
+                      while ((sm = sliceRegex.exec(htmlText)) !== null) {
+                          addFinding(sm[1], '🔓 كرت كامل قبل القص النصي (' + sourceTag + ')', 99, sm[0]);
+                      }
+
+                      // URL params like ?username=... or erase-cookie
+                      var urlParamRegex = /[?&](?:username|user|voucher|card|login|code)=([0-9A-Za-z%._-]{3,20})/gi;
+                      var um;
+                      while ((um = urlParamRegex.exec(htmlText)) !== null) {
+                          addFinding(um[1], '🔗 روابط الجلسة المخفية (' + sourceTag + ')', 93, um[0]);
+                      }
+
+                      // Input fields in raw HTML
+                      var inputRegex = /<input[^>]+name=["']?(?:username|user|voucher|card|code)["']?[^>]*value=["']([^"']{3,20})["']/gi;
+                      var im;
+                      while ((im = inputRegex.exec(htmlText)) !== null) {
+                          if (im[1].indexOf('$(') === -1) {
+                              addFinding(im[1], '🔐 حقل إدخال مخفي (' + sourceTag + ')', 97, 'input value');
+                          }
+                      }
+                  }
+
+                  // Scan current DOM
+                  try {
+                      scanHtmlSource(document.documentElement.outerHTML, 'الصفحة الحالية');
+                  } catch(e) {}
+
+                  // Layer 5: Live DOM Inputs, Hidden Elements & Table Labels
+                  try {
+                      var inputs = document.querySelectorAll('input, textarea, select, [data-user], [data-username], [data-voucher]');
+                      for (var i = 0; i < inputs.length; i++) {
+                          var el = inputs[i];
+                          var val = el.value || el.getAttribute('value') || el.getAttribute('data-user') || el.getAttribute('data-username') || el.getAttribute('data-voucher') || '';
+                          var nameAttr = (el.name || el.id || el.className || '').toLowerCase();
+                          if (val && val.length >= 3) {
+                              var sc = (nameAttr.indexOf('user') !== -1 || nameAttr.indexOf('voucher') !== -1 || nameAttr.indexOf('card') !== -1 || nameAttr.indexOf('login') !== -1) ? 97 : 84;
+                              addFinding(val, '🔐 عناصر الصفحة المخفية (DOM)', sc, 'Element: ' + (el.name || el.id || el.tagName));
+                          }
+                      }
+
+                      var cells = document.querySelectorAll('td, th, span, div, p, b, strong, h1, h2, h3, h4, a');
+                      var labelKeywords = ['اسم المستخدم', 'المستخدم', 'رقم الكرت', 'رمز الكرت', 'الكرت', 'الرمز', 'كود', 'مرحبا', 'أهلا', 'username', 'user', 'voucher', 'card', 'account', 'logged in'];
+                      for (var i = 0; i < cells.length; i++) {
+                          var txt = (cells[i].textContent || '').trim();
+                          if (!txt || txt.length > 100) continue;
+                          var txtLower = txt.toLowerCase();
+                          for (var k = 0; k < labelKeywords.length; k++) {
+                              if (txtLower.indexOf(labelKeywords[k]) !== -1) {
+                                  var nextEl = cells[i].nextElementSibling;
+                                  if (nextEl && nextEl.textContent) {
+                                      addFinding(nextEl.textContent.trim(), '📊 جدول بيانات الجلسة', 92, 'بجانب: ' + labelKeywords[k]);
+                                  }
+                                  var afterColon = txt.split(/[:：]/);
+                                  if (afterColon.length >= 2) {
+                                      addFinding(afterColon[afterColon.length - 1].trim(), '📊 بيانات الجلسة المباشرة', 91, txt);
+                                  }
+                              }
+                          }
+                      }
+                  } catch(e) {}
+
+                  // Layer 6: Global Window JS Properties
+                  try {
+                      var winKeys = Object.keys(window);
+                      for (var i = 0; i < winKeys.length; i++) {
+                          var wk = winKeys[i];
+                          var wkl = wk.toLowerCase();
+                          if (wkl.indexOf('user') !== -1 || wkl.indexOf('voucher') !== -1 || wkl.indexOf('card') !== -1 || wkl.indexOf('login') !== -1 || wkl.indexOf('uname') !== -1) {
+                              var wv = window[wk];
+                              if (typeof wv === 'string' || typeof wv === 'number') {
+                                  addFinding(String(wv), '⚡ ذاكرة الجافاسكربت الحية (window)', 96, 'window.' + wk);
+                              }
+                          }
+                      }
+                  } catch(e) {}
+
+                  // Layer 7: Background Multi-Endpoint Fetch (/status, /login, /status.html, /alogin.html)
+                  var endpoints = ['/status', '/login', '/status.html', '/alogin.html'];
+                  for (var eIdx = 0; eIdx < endpoints.length; eIdx++) {
+                      try {
+                          var ep = endpoints[eIdx];
+                          var resp = await fetch(ep, { credentials: 'include', cache: 'no-store' });
+                          if (resp && resp.ok) {
+                              var rawText = await resp.text();
+                              scanHtmlSource(rawText, ep);
+                          }
+                      } catch(err) {}
+                  }
+
+                  // Layer 8: Partial Code Unmasking Cross-Match
+                  if (partialMasks.length > 0) {
+                      for (var p = 0; p < partialMasks.length; p++) {
+                          var maskStr = partialMasks[p];
+                          var cleanPrefix = maskStr.replace(/[\\*\\•\\…]+.*$/, '');
+                          var cleanSuffix = maskStr.replace(/^.*[\\*\\•\\…]+/, '');
+                          for (var f = 0; f < findings.length; f++) {
+                              var cand = findings[f].code;
+                              if (cand !== maskStr && cand.indexOf('*') === -1) {
+                                  var matchPre = cleanPrefix.length > 0 && cand.indexOf(cleanPrefix) === 0;
+                                  var matchSuf = cleanSuffix.length > 0 && cand.slice(-cleanSuffix.length) === cleanSuffix;
+                                  if (matchPre || matchSuf) {
+                                      findings[f].confidence = 100;
+                                      findings[f].layer = '🎯 تطابق كامل مع الكرت المقصوص (' + maskStr + ')';
+                                  }
+                              }
+                          }
+                      }
+                  }
+
+                  findings.sort(function(a, b) { return b.confidence - a.confidence; });
+                  var payload = JSON.stringify({
+                      url: window.location.href,
+                      partials: partialMasks,
+                      items: findings
+                  });
+                  if (window.KrotyForensicBridge && window.KrotyForensicBridge.postForensicReport) {
+                      window.KrotyForensicBridge.postForensicReport(payload);
+                  }
+              }
+              runDeepForensicScan();
+          })();
+          """.trimIndent()
+
+          private fun parseForensicResults(
+              context: android.content.Context,
+              targetUrl: String,
+              jsonStr: String
+          ): Pair<List<String>, List<ForensicCandidateItem>> {
+              val results = mutableListOf<ForensicCandidateItem>()
+              val partials = mutableListOf<String>()
+              val seenCodes = mutableSetOf<String>()
+
+              // Native Android CookieManager inspection (captures HttpOnly & root gateway cookies!)
+              try {
+                  val cm = android.webkit.CookieManager.getInstance()
+                  val urlsToCheck = listOf(
+                      targetUrl,
+                      detectActiveGatewayUrl(context),
+                      "${detectActiveGatewayUrl(context)}/status",
+                      "${detectActiveGatewayUrl(context)}/login"
+                  )
+                  for (u in urlsToCheck) {
+                      val cookieStr = cm.getCookie(u)
+                      if (!cookieStr.isNullOrBlank()) {
+                          for (part in cookieStr.split(";")) {
+                              val kv = part.split("=", limit = 2)
+                              if (kv.size == 2) {
+                                  val k = kv[0].trim()
+                                  val v = java.net.URLDecoder.decode(kv[1].trim(), "UTF-8").trim()
+                                  val kl = k.lowercase()
+                                  if (v.length in 3..24 && !v.equals("true", true) && !v.equals("false", true)) {
+                                      val isVoucherKey = kl.contains("user") || kl.contains("login") || kl.contains("voucher") || kl.contains("card") || kl.contains("code") || kl.contains("uname")
+                                      val conf = if (isVoucherKey) 99 else 85
+                                      if (seenCodes.add("$v|native_cookie")) {
+                                          results.add(
+                                              ForensicCandidateItem(
+                                                  code = v,
+                                                  sourceLayer = "🍪 كوكيز النظام العميقة (Native CookieManager)",
+                                                  confidence = conf,
+                                                  rawDetail = "Cookie [$k] on $u"
+                                              )
+                                          )
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              } catch (_: Exception) {}
+
+              try {
+                  val root = org.json.JSONObject(jsonStr)
+                  val pArr = root.optJSONArray("partials")
+                  if (pArr != null) {
+                      for (i in 0 until pArr.length()) {
+                          val p = pArr.optString(i)
+                          if (p.isNotBlank() && !partials.contains(p)) partials.add(p)
+                      }
+                  }
+                  val arr = root.optJSONArray("items")
+                  if (arr != null) {
+                      for (i in 0 until arr.length()) {
+                          val obj = arr.optJSONObject(i) ?: continue
+                          val c = obj.optString("code").trim()
+                          val l = obj.optString("layer")
+                          val conf = obj.optInt("confidence", 80)
+                          val det = obj.optString("detail")
+                          if (c.isNotBlank() && seenCodes.add("$c|$l")) {
+                              results.add(ForensicCandidateItem(c, l, conf, det))
+                          }
+                      }
+                  }
+              } catch (_: Exception) {}
+
+              return partials to results.sortedByDescending { it.confidence }
+          }
+
+          @Composable
+          fun DeepForensicInspectorPanel(
+              candidates: List<ForensicCandidateItem>,
+              partialMasks: List<String>,
+              isScanning: Boolean,
+              onRescan: () -> Unit,
+              onClose: () -> Unit
+          ) {
+              val context = androidx.compose.ui.platform.LocalContext.current
+              var partialFilterInput by remember { mutableStateOf("") }
+
+              val filteredCandidates = remember(candidates, partialFilterInput) {
+                  if (partialFilterInput.isBlank()) {
+                      candidates
+                  } else {
+                      val query = partialFilterInput.trim()
+                      candidates.filter { it.code.contains(query, ignoreCase = true) }
+                  }
+              }
+
+              val bestUnmaskedCandidate = remember(filteredCandidates) {
+                  filteredCandidates.firstOrNull { !it.code.contains("*") && !it.code.contains("•") }
+                      ?: filteredCandidates.firstOrNull()
+              }
+
+              Card(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(8.dp),
+                  colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                  border = BorderStroke(1.5.dp, Color(0xFF00E5FF)),
+                  shape = RoundedCornerShape(16.dp)
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(12.dp),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF))
+                              Spacer(modifier = Modifier.width(6.dp))
+                              Text(
+                                  text = "🕵️‍♂️ الفحص الجنائي العميق للكرت الضائع",
+                                  color = Color(0xFFF8FAFC),
+                                  fontWeight = FontWeight.Bold,
+                                  fontSize = 14.sp,
+                                  maxLines = 1,
+                                  softWrap = false
+                              )
+                          }
+                          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                              IconButton(onClick = onRescan, modifier = Modifier.size(30.dp)) {
+                                  Icon(Icons.Default.Refresh, contentDescription = "إعادة الفحص", tint = Color(0xFF00E5FF))
+                              }
+                              IconButton(onClick = onClose, modifier = Modifier.size(30.dp)) {
+                                  Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color(0xFF94A3B8))
+                              }
+                          }
+                      }
+
+                      if (isScanning) {
+                          Row(
+                              modifier = Modifier.fillMaxWidth(),
+                              verticalAlignment = Alignment.CenterVertically,
+                              horizontalArrangement = Arrangement.spacedBy(10.dp)
+                          ) {
+                              CircularProgressIndicator(
+                                  modifier = Modifier.size(20.dp),
+                                  color = Color(0xFF00E5FF),
+                                  strokeWidth = 2.dp
+                              )
+                              Text(
+                                  text = "جاري فحص الكوكيز، السكربتات، تعليقات السورس، وصفحات /status و /login...",
+                                  color = Color(0xFF00E5FF),
+                                  fontSize = 11.sp
+                              )
+                          }
+                      }
+
+                      if (partialMasks.isNotEmpty()) {
+                          Surface(
+                              color = Color(0xFFFFB300).copy(alpha = 0.15f),
+                              shape = RoundedCornerShape(8.dp),
+                              border = BorderStroke(1.dp, Color(0xFFFFB300).copy(alpha = 0.5f)),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Text(
+                                  text = "🧩 تم رصد كرت مقصوص في الشاشة (${partialMasks.joinToString(" , ")}) — جاري مطابقته مع السورس العميق!",
+                                  color = Color(0xFFFFB300),
+                                  fontSize = 11.sp,
+                                  modifier = Modifier.padding(8.dp)
+                              )
+                          }
+                      }
+
+                      if (bestUnmaskedCandidate != null) {
+                          Surface(
+                              color = Color(0xFF00E676).copy(alpha = 0.14f),
+                              shape = RoundedCornerShape(12.dp),
+                              border = BorderStroke(1.5.dp, Color(0xFF00E676)),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Column(
+                                  modifier = Modifier.padding(12.dp),
+                                  verticalArrangement = Arrangement.spacedBy(6.dp)
+                              ) {
+                                  Row(
+                                      modifier = Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.SpaceBetween,
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Text(
+                                          text = "🎯 الكرت المستخرج للجلسة الحالية:",
+                                          color = Color(0xFF00E676),
+                                          fontWeight = FontWeight.Bold,
+                                          fontSize = 12.sp,
+                                          maxLines = 1,
+                                          softWrap = false
+                                      )
+                                      Text(
+                                          text = "ثقة ${bestUnmaskedCandidate.confidence}%",
+                                          color = Color(0xFF00E5FF),
+                                          fontSize = 11.sp,
+                                          fontWeight = FontWeight.Bold,
+                                          maxLines = 1,
+                                          softWrap = false
+                                      )
+                                  }
+
+                                  Row(
+                                      modifier = Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.SpaceBetween,
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Text(
+                                          text = bestUnmaskedCandidate.code,
+                                          color = Color(0xFFF8FAFC),
+                                          fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                          fontWeight = FontWeight.ExtraBold,
+                                          fontSize = 22.sp
+                                      )
+                                      Button(
+                                          onClick = { copyVoucherToClipboard(context, bestUnmaskedCandidate.code) },
+                                          colors = ButtonDefaults.buttonColors(
+                                              containerColor = Color(0xFF00E676),
+                                              contentColor = Color.Black
+                                          ),
+                                          shape = RoundedCornerShape(10.dp),
+                                          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                      ) {
+                                          Text("📋 نسخ الكرت", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                      }
+                                  }
+
+                                  Text(
+                                      text = "المصدر: ${bestUnmaskedCandidate.sourceLayer} (${bestUnmaskedCandidate.rawDetail})",
+                                      color = Color(0xFF94A3B8),
+                                      fontSize = 11.sp,
+                                      maxLines = 1,
+                                      overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                  )
+                              }
+                          }
+                      } else if (!isScanning) {
+                          Text(
+                              text = "لم يتم العثور على كرت مباشر بعد. اضغط على (🔑 صفحة الدخول) أو (📊 صفحة الرصيد) بالأسفل ثم اضغط تحديث الفحص.",
+                              color = Color(0xFFFFB300),
+                              fontSize = 11.sp
+                          )
+                      }
+
+                      OutlinedTextField(
+                          value = partialFilterInput,
+                          onValueChange = { partialFilterInput = it },
+                          label = { Text("هل يظهر نصف الكرت؟ اكتب الأرقام الظاهرة هنا لمطابقتها", fontSize = 11.sp) },
+                          singleLine = true,
+                          modifier = Modifier.fillMaxWidth()
+                      )
+
+                      if (filteredCandidates.size > 1) {
+                          Text(
+                              text = "كافة النتائج المكتشفة في الطبقات العميقة (${filteredCandidates.size}):",
+                              color = Color(0xFF94A3B8),
+                              fontSize = 11.sp,
+                              fontWeight = FontWeight.SemiBold
+                          )
+                          Column(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .heightIn(max = 150.dp)
+                                  .verticalScroll(rememberScrollState()),
+                              verticalArrangement = Arrangement.spacedBy(6.dp)
+                          ) {
+                              filteredCandidates.forEach { item ->
+                                  Surface(
+                                      color = Color(0xFF1E293B),
+                                      shape = RoundedCornerShape(8.dp),
+                                      modifier = Modifier.fillMaxWidth()
+                                  ) {
+                                      Row(
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .padding(horizontal = 10.dp, vertical = 6.dp),
+                                          horizontalArrangement = Arrangement.SpaceBetween,
+                                          verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                          Column(modifier = Modifier.weight(1f)) {
+                                              Text(
+                                                  text = item.code,
+                                                  color = Color(0xFF00E5FF),
+                                                  fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                  fontWeight = FontWeight.Bold,
+                                                  fontSize = 15.sp
+                                              )
+                                              Text(
+                                                  text = "${item.sourceLayer} • ${item.rawDetail}",
+                                                  color = Color(0xFF94A3B8),
+                                                  fontSize = 10.sp,
+                                                  maxLines = 1,
+                                                  overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                              )
+                                          }
+                                          TextButton(onClick = { copyVoucherToClipboard(context, item.code) }) {
+                                              Text("نسخ", color = Color(0xFF00E676), fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun StandaloneLostVoucherForensicDialog(
+              onDismiss: () -> Unit
+          ) {
+              val context = androidx.compose.ui.platform.LocalContext.current
+              val baseUrl = remember { detectActiveGatewayUrl(context) }
+              var probeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+              var isScanning by remember { mutableStateOf(true) }
+              var candidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
+              var partialMasks by remember { mutableStateOf<List<String>>(emptyList()) }
+
+              val triggerForensicScan: (android.webkit.WebView?) -> Unit = { wv ->
+                  if (wv != null) {
+                      isScanning = true
+                      wv.evaluateJavascript(DEEP_FORENSIC_JS_SCRIPT, null)
+                  }
+              }
+
+              androidx.compose.ui.window.Dialog(
+                  onDismissRequest = onDismiss,
+                  properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .background(Color(0xFF0A0E17))
+                          .padding(8.dp)
+                  ) {
+                      DeepForensicInspectorPanel(
+                          candidates = candidates,
+                          partialMasks = partialMasks,
+                          isScanning = isScanning,
+                          onRescan = { triggerForensicScan(probeWebView) },
+                          onClose = onDismiss
+                      )
+
+                      Row(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .horizontalScroll(rememberScrollState())
+                              .padding(horizontal = 8.dp, vertical = 4.dp),
+                          horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
+                          AssistChip(
+                              onClick = { probeWebView?.loadUrl("$baseUrl/status") },
+                              label = { Text("📊 فحص /status", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                          )
+                          AssistChip(
+                              onClick = { probeWebView?.loadUrl("$baseUrl/login") },
+                              label = { Text("🔑 فحص /login", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                          )
+                          AssistChip(
+                              onClick = { probeWebView?.loadUrl("$baseUrl/alogin.html") },
+                              label = { Text("⚡ فحص /alogin.html", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                          )
+                      }
+
+                      androidx.compose.ui.viewinterop.AndroidView(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .weight(1f)
+                              .padding(8.dp)
+                              .clip(RoundedCornerShape(14.dp)),
+                          factory = { ctx ->
+                              android.webkit.WebView(ctx).apply {
+                                  settings.javaScriptEnabled = true
+                                  settings.domStorageEnabled = true
+                                  android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                                  addJavascriptInterface(
+                                      ForensicJsBridge { jsonStr ->
+                                          val (p, c) = parseForensicResults(ctx, url ?: baseUrl, jsonStr)
+                                          partialMasks = p
+                                          candidates = c
+                                          isScanning = false
+                                      },
+                                      "KrotyForensicBridge"
+                                  )
+                                  webViewClient = object : android.webkit.WebViewClient() {
+                                      override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                          super.onPageFinished(view, url)
+                                          triggerForensicScan(view)
+                                      }
+                                  }
+                                  probeWebView = this
+                                  loadUrl("$baseUrl/status")
+                              }
+                          }
+                      )
+                  }
+              }
+          }
+
           @Composable
           fun <T : android.view.View> KrotyCockpitAndroidView(
               factory: (android.content.Context) -> T,
               modifier: Modifier = Modifier,
               update: (T) -> Unit = {}
           ) {
+              val context = androidx.compose.ui.platform.LocalContext.current
               var capturedWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
               var currentUrlDisplay by remember { mutableStateOf("http://10.0.0.1/login") }
               var isDesktopMode by remember { mutableStateOf(false) }
+
+              var showForensicDrawer by remember { mutableStateOf(false) }
+              var isForensicScanning by remember { mutableStateOf(false) }
+              var forensicCandidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
+              var forensicPartials by remember { mutableStateOf<List<String>>(emptyList()) }
+              var bridgeAttached by remember { mutableStateOf(false) }
+
+              val runForensicOnCapturedWebView: () -> Unit = {
+                  val wv = capturedWebView
+                  if (wv != null) {
+                      showForensicDrawer = true
+                      isForensicScanning = true
+                      val (nativePartials, nativeItems) = parseForensicResults(
+                          context,
+                          wv.url ?: currentUrlDisplay,
+                          "{}"
+                      )
+                      if (nativeItems.isNotEmpty()) {
+                          forensicPartials = nativePartials
+                          forensicCandidates = nativeItems
+                      }
+                      wv.evaluateJavascript(DEEP_FORENSIC_JS_SCRIPT, null)
+                  }
+              }
 
               Column(modifier = modifier.fillMaxSize().background(Color(0xFF0A0E17))) {
                   Surface(
@@ -332,6 +1078,18 @@ jobs:
                               }
 
                               AssistChip(
+                                  onClick = { runForensicOnCapturedWebView() },
+                                  label = {
+                                      Text("🕵️‍♂️ كشف الكرت الضائع (فحص عميق)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                  },
+                                  colors = AssistChipDefaults.assistChipColors(
+                                      containerColor = Color(0xFF00E676).copy(alpha = 0.2f),
+                                      labelColor = Color(0xFF00E676)
+                                  ),
+                                  border = BorderStroke(1.5.dp, Color(0xFF00E676))
+                              )
+
+                              AssistChip(
                                   onClick = {
                                       val target = "${extractHost()}/status"
                                       currentUrlDisplay = target
@@ -396,12 +1154,41 @@ jobs:
                       }
                   }
 
+                  if (showForensicDrawer) {
+                      DeepForensicInspectorPanel(
+                          candidates = forensicCandidates,
+                          partialMasks = forensicPartials,
+                          isScanning = isForensicScanning,
+                          onRescan = { runForensicOnCapturedWebView() },
+                          onClose = { showForensicDrawer = false }
+                      )
+                  }
+
                   androidx.compose.ui.viewinterop.AndroidView(
                       factory = { ctx ->
                           factory(ctx).also { view ->
                               if (view is android.webkit.WebView) {
                                   capturedWebView = view
                                   currentUrlDisplay = view.url ?: currentUrlDisplay
+                                  if (!bridgeAttached) {
+                                      try {
+                                          view.settings.domStorageEnabled = true
+                                          view.addJavascriptInterface(
+                                              ForensicJsBridge { jsonStr ->
+                                                  val (p, c) = parseForensicResults(
+                                                      ctx,
+                                                      view.url ?: currentUrlDisplay,
+                                                      jsonStr
+                                                  )
+                                                  forensicPartials = p
+                                                  forensicCandidates = c
+                                                  isForensicScanning = false
+                                              },
+                                              "KrotyForensicBridge"
+                                          )
+                                          bridgeAttached = true
+                                      } catch (_: Exception) {}
+                                  }
                               }
                           }
                       },
@@ -421,7 +1208,7 @@ jobs:
               }
           }
           '''
-              r_code = r_code.rstrip() + "\n\n" + cockpit_appendix.strip() + "\n"
+              r_code = r_code.rstrip() + "\n\n" + cockpit_and_forensic_appendix.strip() + "\n"
               with open(radar_path, "w", encoding="utf-8") as f:
                   f.write(r_code)
 
@@ -434,7 +1221,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "Upgrade to Kroty Pro v3.2: Zero-conflict surgical patch"
+            git commit -m "Upgrade to Kroty Pro v3.3: Deep Lost-Voucher Forensic Recovery Engine"
             git push || true
           fi
 
@@ -462,7 +1249,7 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             exit $EXIT_CODE
           else
-            echo "### ✅ تم بناء تطبيق كروتي نت Kroty Pro v3.2 بنجاح!" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ تم بناء تطبيق كروتي نت Kroty Pro v3.3 بنجاح!" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Upload Real APK Artifact
