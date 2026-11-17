@@ -36,32 +36,93 @@ import com.example.ui.KrotyViewModel
 @Composable
 fun RadarScreen(viewModel: KrotyViewModel,
     onNavigateToScanner: () -> Unit) {
-    var showStandaloneForensicModal by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxSize()) {
-        RadarScreenOriginal(viewModel, onNavigateToScanner)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        KrotyAutoPilotHub.loadPersistedSession(context)
+    }
 
-        ExtendedFloatingActionButton(
-            onClick = { showStandaloneForensicModal = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            containerColor = Color(0xFF00E5FF),
-            contentColor = Color(0xFF0A0E17)
-        ) {
-            Icon(Icons.Default.Search, contentDescription = null)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "🕵️‍♂️ استخراج الكرت الضائع",
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                maxLines = 1,
-                softWrap = false
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (KrotyAutoPilotHub.liveVoucherCode.isNotBlank() || KrotyAutoPilotHub.liveBalanceText.isNotBlank()) {
+                LiveAutoPilotSessionBanner(
+                    voucherCode = KrotyAutoPilotHub.liveVoucherCode,
+                    balanceText = KrotyAutoPilotHub.liveBalanceText,
+                    timeText = KrotyAutoPilotHub.liveTimeText,
+                    onOpenPortal = {
+                        KrotyAutoPilotHub.openModernPortal(autoLoginCode = null, startInForensicMode = false)
+                    }
+                )
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                RadarScreenOriginal(viewModel, onNavigateToScanner)
+            }
         }
 
-        if (showStandaloneForensicModal) {
-            StandaloneLostVoucherForensicDialog(
-                onDismiss = { showStandaloneForensicModal = false }
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    KrotyAutoPilotHub.openModernPortal(autoLoginCode = null, startInForensicMode = true)
+                },
+                modifier = Modifier.weight(1f).height(48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF00E5FF),
+                    contentColor = Color(0xFF0A0E17)
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "🕵️‍♂️ استخراج الكرت الضائع",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+
+            Button(
+                onClick = {
+                    KrotyAutoPilotHub.openModernPortal(autoLoginCode = null, startInForensicMode = false)
+                },
+                modifier = Modifier.weight(1f).height(48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF00E676),
+                    contentColor = Color(0xFF0A0E17)
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "🌐 البوابة الذكية والرصيد",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+
+        if (KrotyAutoPilotHub.isModernPortalOpen) {
+            ModernCyberPortalCockpitDialog(
+                initialAutoLoginVoucher = KrotyAutoPilotHub.pendingAutoLoginVoucher,
+                startWithForensicSheet = KrotyAutoPilotHub.openForensicOnLaunch,
+                onSaveVoucherToApp = { recoveredCode ->
+                    try {
+                        viewModel.addManualVoucher(recoveredCode, "كرت مستخرج من الجلسة", "")
+                    } catch (_: Exception) {}
+                    KrotyAutoPilotHub.persistSession(context, recoveredCode, KrotyAutoPilotHub.liveBalanceText, KrotyAutoPilotHub.liveTimeText)
+                },
+                onDismiss = {
+                    KrotyAutoPilotHub.closeModernPortal()
+                }
             )
         }
     }
@@ -553,6 +614,164 @@ fun RealPortalWebViewDialog(
     }
 }
 
+object KrotyAutoPilotHub {
+    var isModernPortalOpen by mutableStateOf(false)
+    var openForensicOnLaunch by mutableStateOf(false)
+    var pendingAutoLoginVoucher by mutableStateOf<String?>(null)
+
+    var liveVoucherCode by mutableStateOf("")
+    var liveBalanceText by mutableStateOf("")
+    var liveTimeText by mutableStateOf("")
+    var autoPilotStatusMessage by mutableStateOf("جاهز للاتصال الذكي")
+
+    fun triggerAutoLogin(voucherCode: String) {
+        val clean = voucherCode.trim()
+        if (clean.isNotEmpty()) {
+            pendingAutoLoginVoucher = clean
+            liveVoucherCode = clean
+            openForensicOnLaunch = false
+            autoPilotStatusMessage = "🤖 جاري إدخال الكرت ($clean) وتسجيل الدخول تلقائياً..."
+            isModernPortalOpen = true
+        }
+    }
+
+    fun openModernPortal(autoLoginCode: String? = null, startInForensicMode: Boolean = false) {
+        if (!autoLoginCode.isNullOrBlank()) {
+            pendingAutoLoginVoucher = autoLoginCode.trim()
+        }
+        openForensicOnLaunch = startInForensicMode
+        isModernPortalOpen = true
+    }
+
+    fun closeModernPortal() {
+        isModernPortalOpen = false
+        openForensicOnLaunch = false
+    }
+
+    fun persistSession(context: android.content.Context, code: String, balance: String, time: String) {
+        if (code.isNotBlank()) liveVoucherCode = code
+        if (balance.isNotBlank()) liveBalanceText = balance
+        if (time.isNotBlank()) liveTimeText = time
+        try {
+            val prefs = context.getSharedPreferences("kroty_session_vault", android.content.Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("last_active_voucher", liveVoucherCode)
+                .putString("last_balance", liveBalanceText)
+                .putString("last_time", liveTimeText)
+                .putLong("updated_at", System.currentTimeMillis())
+                .apply()
+        } catch (_: Exception) {}
+    }
+
+    fun loadPersistedSession(context: android.content.Context) {
+        try {
+            val prefs = context.getSharedPreferences("kroty_session_vault", android.content.Context.MODE_PRIVATE)
+            val savedCode = prefs.getString("last_active_voucher", "") ?: ""
+            val savedBal = prefs.getString("last_balance", "") ?: ""
+            val savedTime = prefs.getString("last_time", "") ?: ""
+            if (liveVoucherCode.isBlank() && savedCode.isNotBlank()) liveVoucherCode = savedCode
+            if (liveBalanceText.isBlank() && savedBal.isNotBlank()) liveBalanceText = savedBal
+            if (liveTimeText.isBlank() && savedTime.isNotBlank()) liveTimeText = savedTime
+        } catch (_: Exception) {}
+    }
+}
+
+@Composable
+fun LiveAutoPilotSessionBanner(
+    voucherCode: String,
+    balanceText: String,
+    timeText: String,
+    onOpenPortal: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF102338)),
+        border = BorderStroke(1.5.dp, Color(0xFF00E676)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(Color(0xFF00E676))
+                    )
+                    Text(
+                        text = "بيانات الجلسة الحية المستخرجة تلقائياً",
+                        color = Color(0xFF00E676),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (voucherCode.isNotBlank()) {
+                        Text(
+                            text = "💳 الكرت: $voucherCode",
+                            color = Color(0xFFF8FAFC),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                    if (balanceText.isNotBlank()) {
+                        Text(
+                            text = "📦 الرصيد: $balanceText",
+                            color = Color(0xFF00E5FF),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+                if (timeText.isNotBlank()) {
+                    Text(
+                        text = "⏱️ الصلاحية/الوقت: $timeText",
+                        color = Color(0xFFFFB300),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (voucherCode.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = { copyVoucherToClipboard(context, voucherCode) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF))
+                    ) {
+                        Text("نسخ", color = Color(0xFF00E5FF), fontSize = 11.sp, maxLines = 1, softWrap = false)
+                    }
+                }
+                Button(
+                    onClick = onOpenPortal,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text("تحديث", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                }
+            }
+        }
+    }
+}
+
 data class ForensicCandidateItem(
     val code: String,
     val sourceLayer: String,
@@ -569,369 +788,596 @@ private fun copyVoucherToClipboard(context: android.content.Context, voucherCode
     } catch (_: Exception) {}
 }
 
+private fun bindProcessToActiveWifi(context: android.content.Context): android.net.Network? {
+    try {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        for (net in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(net)
+            if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                cm.bindProcessToNetwork(net)
+                return net
+            }
+        }
+    } catch (_: Exception) {}
+    return null
+}
+
 private fun detectActiveGatewayUrl(context: android.content.Context): String {
     try {
         val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val net = cm.activeNetwork
-        val lp = if (net != null) cm.getLinkProperties(net) else null
-        if (lp != null) {
-            for (route in lp.routes) {
-                val gw = route.gateway?.hostAddress
-                if (!gw.isNullOrBlank() && !gw.contains(":") && gw != "0.0.0.0") {
-                    return "http://$gw"
+        for (net in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(net)
+            if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                val lp = cm.getLinkProperties(net)
+                if (lp != null) {
+                    for (route in lp.routes) {
+                        val gw = route.gateway?.hostAddress
+                        if (!gw.isNullOrBlank() && !gw.contains(":") && gw != "0.0.0.0") {
+                            return "http://$gw"
+                        }
+                    }
                 }
             }
+        }
+        val wm = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        val dhcp = wm.dhcpInfo
+        if (dhcp != null && dhcp.gateway != 0) {
+            val g = dhcp.gateway
+            val ip = "${g and 0xFF}.${(g shr 8) and 0xFF}.${(g shr 16) and 0xFF}.${(g shr 24) and 0xFF}"
+            if (ip != "0.0.0.0") return "http://$ip"
         }
     } catch (_: Exception) {}
     return "http://10.0.0.1"
 }
 
-private class ForensicJsBridge(
-    private val onReportJson: (String) -> Unit
+// Pure Native Kotlin HTTP Scraper (2-second timeout, zero hangs, fetches /status, /login, /status.html, /alogin.html)
+private fun fetchGatewayPagesNative(context: android.content.Context, baseGatewayUrl: String): Map<String, String> {
+    val resultMap = mutableMapOf<String, String>()
+    val wifiNet = bindProcessToActiveWifi(context)
+    val host = baseGatewayUrl.removeSuffix("/")
+    val paths = listOf("/status", "/login", "/status.html", "/alogin.html", "/rstatus.html")
+    val cookieMgr = android.webkit.CookieManager.getInstance()
+
+    for (path in paths) {
+        val fullUrl = "$host$path"
+        try {
+            val urlObj = java.net.URL(fullUrl)
+            val conn = (if (wifiNet != null) wifiNet.openConnection(urlObj) else urlObj.openConnection()) as java.net.HttpURLConnection
+            conn.connectTimeout = 1800
+            conn.readTimeout = 1800
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36")
+            val ck = cookieMgr.getCookie(fullUrl) ?: cookieMgr.getCookie(host)
+            if (!ck.isNullOrBlank()) {
+                conn.setRequestProperty("Cookie", ck)
+            }
+            val code = conn.responseCode
+            val stream = if (code in 200..399) conn.inputStream else conn.errorStream
+            if (stream != null) {
+                val text = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                if (text.isNotBlank()) {
+                    resultMap[path] = text
+                }
+            }
+            conn.disconnect()
+        } catch (_: Exception) {}
+    }
+    return resultMap
+}
+
+// Pure Native Kotlin Balance & Session Extractor (Reads Arabic & English MikroTik /status pages)
+private fun extractLiveBalanceFromTextAndHtml(
+    visibleText: String,
+    rawHtml: String
+): Triple<String, String, String> {
+    var extractedUser = ""
+    var extractedBalance = ""
+    var extractedTime = ""
+
+    val combinedText = "$visibleText\n" + rawHtml
+        .replace(Regex("<script[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("<[^>]+>"), " ")
+        .replace("&nbsp;", " ")
+
+    // 1. Extract Remaining Data Balance (MB / GB / KB / GiB / MiB)
+    val balancePatterns = listOf(
+        Regex("""(?:الباقي من الصلاحية|الرصيد المتبقي|التحميل المتبقي|الحجم المتبقي|البيانات المتبقية|المتبقي من الرصيد|المتبقي|الرصيد|bytes left|remain(?:ing)? bytes|download limit|data left)[\s:：\-]*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|KB|GiB|MiB|جيجا|ميجا|كيلو|غيغا|ميغا))""", RegexOption.IGNORE_CASE),
+        Regex("""([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|GiB|MiB|جيجا|ميجا|غيغا|ميغا))""", RegexOption.IGNORE_CASE)
+    )
+    for (pat in balancePatterns) {
+        val m = pat.find(combinedText)
+        if (m != null) {
+            extractedBalance = m.groupValues[1].trim()
+            break
+        }
+    }
+
+    // 2. Extract Remaining Time / Uptime
+    val timePatterns = listOf(
+        Regex("""(?:الوقت المتبقي|الصلاحية المتبقية|الزمن المتبقي|وقت الجلسة|الوقت المستهلك|وقت الاتصال|session time left|time left|uptime)[\s:：\-]*([0-9dhms:\sيومساعةدقيقةثانية]{2,25})""", RegexOption.IGNORE_CASE),
+        Regex("""\b([0-9]{1,3}[dD]\s*[0-9]{1,2}[hH]\s*[0-9]{1,2}[mM]|\d{1,2}:\d{2}:\d{2})\b""")
+    )
+    for (pat in timePatterns) {
+        val m = pat.find(combinedText)
+        if (m != null) {
+            val candidateTime = m.groupValues[1].trim()
+            if (candidateTime.any { it.isDigit() }) {
+                extractedTime = candidateTime
+                break
+            }
+        }
+    }
+
+    // 3. Extract Active Voucher / Username from welcome message or table
+    val userPatterns = listOf(
+        Regex("""(?:اسم المستخدم|رقم الكرت|رمز الكرت|الكرت|الرمز|المستخدم|مرحباً|مرحبا|أهلاً|اهلا|welcome|logged in as|username|user)[\s:：\-]*([0-9A-Za-z\*]{4,18})""", RegexOption.IGNORE_CASE)
+    )
+    for (pat in userPatterns) {
+        val m = pat.find(combinedText)
+        if (m != null) {
+            val u = m.groupValues[1].trim()
+            if (u.any { it.isDigit() } && !u.equals("status", true) && !u.equals("login", true)) {
+                extractedUser = u
+                break
+            }
+        }
+    }
+
+    return Triple(extractedUser, extractedBalance, extractedTime)
+}
+
+// Pure Native Kotlin 7-Layer Pattern-Guided Forensic Engine
+private fun analyzeSourcesForLostVoucher(
+    context: android.content.Context,
+    targetUrl: String,
+    sourcesMap: Map<String, String>,
+    jsBundleJson: String,
+    expectedLength: Int?,
+    prefixFilter: String,
+    suffixFilter: String
+): Pair<List<String>, List<ForensicCandidateItem>> {
+    val candidates = mutableListOf<ForensicCandidateItem>()
+    val partialMasks = mutableListOf<String>()
+    val seen = mutableSetOf<String>()
+
+    val cleanPre = prefixFilter.trim()
+    val cleanSuf = suffixFilter.trim()
+
+    val blacklistWords = setOf(
+        "true", "false", "null", "undefined", "none", "http", "https", "html", "body",
+        "text", "hidden", "submit", "button", "password", "username", "user", "login",
+        "status", "logout", "mikrotik", "routeros", "hotspot", "default", "utf-8",
+        "utf8", "windows", "android", "iphone", "script", "style", "table", "center",
+        "right", "left", "width", "height", "color", "border", "margin", "padding",
+        "arial", "tahoma", "cairo", "sans-serif", "monospace", "function", "return",
+        "window", "document", "location", "cookie", "localstorage", "sessionstorage",
+        "100%", "auto", "bold", "normal", "solid", "pointer", "block", "inline", "flex",
+        "grid", "relative", "absolute", "fixed", "viewport", "content", "charset"
+    )
+
+    fun isCommonFalsePositive(token: String): Boolean {
+        val t = token.trim()
+        val lower = t.lowercase()
+        if (lower in blacklistWords) return true
+        if (lower.startsWith("http") || lower.startsWith("www")) return true
+        // IP address or MAC address
+        if (Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(t)) return true
+        if (Regex("""^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$""").matches(t)) return true
+        // Pure letters without digits (unless high confidence user variable)
+        if (t.all { it.isLetter() }) return true
+        // Years / standard port / CSS sizes / Byte multiples
+        if (t in setOf("2020", "2021", "2022", "2023", "2024", "2025", "2026", "1024", "2048", "4096", "8080", "8081", "1280", "1920", "0000", "1111", "9999")) return true
+        // Yemeni / common support phone numbers (9 digits starting with 77/71/73/78/70) unless user explicitly searched that prefix
+        if (t.length == 9 && (t.startsWith("77") || t.startsWith("71") || t.startsWith("73") || t.startsWith("78") || t.startsWith("70")) && !cleanPre.startsWith("7")) {
+            return true
+        }
+        return false
+    }
+
+    fun matchesUserPattern(code: String): Boolean {
+        val cleanCode = code.trim()
+        if (cleanCode.contains("*") || cleanCode.contains("•")) return true
+        if (expectedLength != null && cleanCode.length != expectedLength) return false
+        if (cleanPre.isNotEmpty() && !cleanCode.startsWith(cleanPre, ignoreCase = true)) return false
+        if (cleanSuf.isNotEmpty() && !cleanCode.endsWith(cleanSuf, ignoreCase = true)) return false
+        return true
+    }
+
+    fun addCandidate(rawCode: String, layer: String, baseConfidence: Int, detail: String) {
+        var c = rawCode.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+        try { c = java.net.URLDecoder.decode(c, "UTF-8").trim() } catch (_: Exception) {}
+        if (c.length !in 3..20) return
+        if (c.contains(" ") || c.contains("\n") || c.contains("\t") || c.contains("$(")) return
+
+        if ((c.contains("*") || c.contains("•")) && c.any { it.isDigit() }) {
+            if (!partialMasks.contains(c)) partialMasks.add(c)
+        }
+
+        if (isCommonFalsePositive(c)) return
+        if (!matchesUserPattern(c)) return
+
+        var finalConf = baseConfidence
+        if (expectedLength != null && c.length == expectedLength) finalConf += 12
+        if (cleanPre.isNotEmpty() && c.startsWith(cleanPre, true)) finalConf += 15
+        if (cleanSuf.isNotEmpty() && c.endsWith(cleanSuf, true)) finalConf += 15
+        finalConf = finalConf.coerceAtMost(99)
+
+        val key = "${c.lowercase()}|$layer"
+        if (seen.add(key)) {
+            candidates.add(ForensicCandidateItem(c, layer, finalConf, detail.take(85)))
+        }
+    }
+
+    // Layer 0: Kroty Session Vault & Clipboard
+    try {
+        val prefs = context.getSharedPreferences("kroty_session_vault", android.content.Context.MODE_PRIVATE)
+        val vaultCode = prefs.getString("last_active_voucher", "") ?: ""
+        if (vaultCode.isNotBlank()) {
+            addCandidate(vaultCode, "🛡️ خزنة جلسات كروتي نت", 99, "آخر كرت نشط مسجل")
+        }
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+        if (clipText.length in 4..16 && clipText.any { it.isDigit() }) {
+            addCandidate(clipText, "📋 حافظة الهاتف (Clipboard)", 94, " منسوخ في الحافظة")
+        }
+    } catch (_: Exception) {}
+
+    // Layer 1: Native Android CookieManager
+    try {
+        val cm = android.webkit.CookieManager.getInstance()
+        val gw = detectActiveGatewayUrl(context)
+        for (u in listOf(targetUrl, gw, "$gw/status", "$gw/login")) {
+            val ckStr = cm.getCookie(u) ?: continue
+            for (part in ckStr.split(";")) {
+                val kv = part.split("=", limit = 2)
+                if (kv.size == 2) {
+                    val k = kv[0].trim()
+                    val v = kv[1].trim()
+                    val kl = k.lowercase()
+                    val score = if (kl.contains("user") || kl.contains("login") || kl.contains("voucher") || kl.contains("card") || kl.contains("code") || kl.contains("uname")) 98 else 86
+                    addCandidate(v, "🍪 كوكيز النظام (Native Cookies)", score, "Cookie: $k")
+                }
+            }
+        }
+    } catch (_: Exception) {}
+
+    // Layer 2: Parse WebView JS Bundle (DOM text, outerHTML, cookies, localStorage, sessionStorage, inputs, window vars)
+    val allSources = mutableMapOf<String, String>()
+    allSources.putAll(sourcesMap)
+    try {
+        if (jsBundleJson.isNotBlank() && jsBundleJson.startsWith("{")) {
+            val root = org.json.JSONObject(jsBundleJson)
+            val domHtml = root.optString("html", "")
+            val domText = root.optString("text", "")
+            val docCookie = root.optString("cookie", "")
+            if (domHtml.isNotBlank()) allSources["DOM-HTML"] = domHtml
+            if (domText.isNotBlank()) allSources["DOM-TEXT"] = domText
+            if (docCookie.isNotBlank()) {
+                for (part in docCookie.split(";")) {
+                    val kv = part.split("=", limit = 2)
+                    if (kv.size == 2) {
+                        addCandidate(kv[1], "🍪 كوكيز الصفحة (document.cookie)", 96, "Key: ${kv[0].trim()}")
+                    }
+                }
+            }
+            val storageArr = root.optJSONArray("storage")
+            if (storageArr != null) {
+                for (i in 0 until storageArr.length()) {
+                    val item = storageArr.optJSONObject(i) ?: continue
+                    addCandidate(item.optString("v"), "💾 ذاكرة المتصفح (Storage)", 95, item.optString("k"))
+                }
+            }
+            val inputsArr = root.optJSONArray("inputs")
+            if (inputsArr != null) {
+                for (i in 0 until inputsArr.length()) {
+                    val item = inputsArr.optJSONObject(i) ?: continue
+                    addCandidate(item.optString("v"), "🔐 حقول الإدخال المخفية", 96, item.optString("k"))
+                }
+            }
+            val winArr = root.optJSONArray("winVars")
+            if (winArr != null) {
+                for (i in 0 until winArr.length()) {
+                    val item = winArr.optJSONObject(i) ?: continue
+                    addCandidate(item.optString("v"), "⚡ متغيرات الجافاسكربت الحية", 95, item.optString("k"))
+                }
+            }
+        }
+    } catch (_: Exception) {}
+
+    // Layer 3 to 7: Deep Regex & Token Scan across all HTML & Text Sources
+    val commentRegex = Regex("""<!--([\s\S]*?)-->""")
+    val jsVarRegex = Regex("""(?:user(?:name)?|voucher|card|login|uname|code|account|member|pass(?:word)?)\s*[:=]\s*["']([^"'\r\n]{3,20})["']""", RegexOption.IGNORE_CASE)
+    val sliceRegex = Regex("""["']([0-9A-Za-z]{4,20})["']\s*\.(?:substring|substr|slice|replace)\s*\(""")
+    val urlParamRegex = Regex("""[?&](?:username|user|voucher|card|login|code)=([0-9A-Za-z%._\-]{3,20})""", RegexOption.IGNORE_CASE)
+    val inputHtmlRegex = Regex("""<input[^>]+(?:name|id)=["']?(?:username|user|voucher|card|code)["']?[^>]*value=["']([^"']{3,20})["']""", RegexOption.IGNORE_CASE)
+    val labelContextRegex = Regex("""(?:اسم المستخدم|رقم الكرت|رمز الكرت|الكرت|الرمز|المستخدم|مرحباً|مرحبا|أهلاً|welcome|username|user|voucher|card)[\s:：\-]*</?(?:td|th|span|b|strong|div|p)?[^>]*>[\s:：\-]*([0-9A-Za-z\*•]{4,18})""", RegexOption.IGNORE_CASE)
+    val generalTokenRegex = Regex("""\b([0-9A-Za-z\*•]{4,16})\b""")
+
+    for ((srcName, content) in allSources) {
+        if (content.isBlank()) continue
+
+        // A. Hidden HTML Comments <!-- ... -->
+        for (m in commentRegex.findAll(content)) {
+            val commentBody = m.groupValues[1]
+            for (tm in generalTokenRegex.findAll(commentBody)) {
+                val tok = tm.groupValues[1]
+                if (tok.count { it.isDigit() } >= 3) {
+                    addCandidate(tok, "🕵️ تعليقات السورس المخفية ($srcName)", 94, "داخل <!-- تعليق مخفي -->")
+                }
+            }
+        }
+
+        // B. Pre-Masking JS slice/substring
+        for (m in sliceRegex.findAll(content)) {
+            addCandidate(m.groupValues[1], "🔓 كرت كامل قبل القص البرمجي ($srcName)", 99, m.value)
+        }
+
+        // C. Inline JS Variables
+        for (m in jsVarRegex.findAll(content)) {
+            addCandidate(m.groupValues[1], "📜 متغيرات السكربت ($srcName)", 95, m.value)
+        }
+
+        // D. URL Params & Hidden Inputs
+        for (m in urlParamRegex.findAll(content)) {
+            addCandidate(m.groupValues[1], "🔗 روابط الجلسة ($srcName)", 93, m.value)
+        }
+        for (m in inputHtmlRegex.findAll(content)) {
+            addCandidate(m.groupValues[1], "🔐 حقل مخفي في السورس ($srcName)", 96, m.value)
+        }
+
+        // E. Table cells & labels
+        for (m in labelContextRegex.findAll(content)) {
+            addCandidate(m.groupValues[1], "📊 جدول بيانات الجلسة ($srcName)", 93, "بجانب تسمية الكرت/المستخدم")
+        }
+
+        // F. Pattern-Guided Deep Token Extraction (Strips HTML tags & CSS/JS noise first)
+        val visibleAndScriptTokens = if (srcName == "DOM-TEXT") {
+            content
+        } else {
+            content
+                .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), " ")
+                .replace(Regex("<[^>]+>"), " ")
+        }
+        for (tm in generalTokenRegex.findAll(visibleAndScriptTokens)) {
+            val tok = tm.groupValues[1]
+            val digitCount = tok.count { it.isDigit() }
+            if (digitCount >= 4) {
+                val baseConf = if (expectedLength != null || cleanPre.isNotEmpty() || cleanSuf.isNotEmpty()) 85 else 72
+                addCandidate(tok, "🔍 فحص عميق مطابق للمواصفات ($srcName)", baseConf, "تطابق نمط الأرقام (${tok.length} خانات)")
+            }
+        }
+    }
+
+    // Cross-match partial masked cards (e.g. 482***) with full candidates!
+    val upgradedCandidates = candidates.map { item ->
+        var boosted = item
+        for (mask in partialMasks) {
+            val pre = mask.substringBefore("*").substringBefore("•").trim()
+            val suf = mask.substringAfterLast("*").substringAfterLast("•").trim()
+            if (item.code != mask && !item.code.contains("*")) {
+                val matchPre = pre.isNotEmpty() && item.code.startsWith(pre, true)
+                val matchSuf = suf.isNotEmpty() && item.code.endsWith(suf, true)
+                if (matchPre || matchSuf) {
+                    boosted = item.copy(
+                        confidence = 99,
+                        sourceLayer = "🎯 تطابق كامل مع الكرت المقصوص ($mask)"
+                    )
+                }
+            }
+        }
+        boosted
+    }.sortedByDescending { it.confidence }
+
+    return partialMasks to upgradedCandidates
+}
+
+private class KrotyNativeJsBridge(
+    private val onDomBundleReceived: (String) -> Unit,
+    private val onAutoLoginTriggered: (String) -> Unit
 ) {
     @android.webkit.JavascriptInterface
-    fun postForensicReport(jsonStr: String) {
+    fun reportDomBundle(jsonStr: String) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            onReportJson(jsonStr)
+            onDomBundleReceived(jsonStr)
+        }
+    }
+
+    @android.webkit.JavascriptInterface
+    fun reportAutoLoginSubmitted(voucherCode: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            onAutoLoginTriggered(voucherCode)
         }
     }
 }
 
-private val DEEP_FORENSIC_JS_SCRIPT = """
-(function() {
-    async function runDeepForensicScan() {
-        var findings = [];
-        var partialMasks = [];
-        var seen = {};
-
-        function addFinding(code, layer, confidence, detail) {
-            if (!code) return;
-            var c = String(code).trim();
-            try { c = decodeURIComponent(c).trim(); } catch(e) {}
-            c = c.replace(/^["']+|["']+$/g, '').trim();
-            if (c.length < 3 || c.length > 24) return;
-            var lower = c.toLowerCase();
-            var blacklist = [
-                'true','false','null','undefined','none','http','https','html','body','text','hidden',
-                'submit','button','password','username','user','login','status','logout','mikrotik',
-                'routeros','hotspot','default','utf-8',' utf8','windows','android','iphone','script',
-                'style','table','center','right','left','width','height','color','border','margin',
-                'padding','arial','tahoma','cairo','sans-serif','monospace','function','return',
-                'window','document','location','cookie','localstorage','sessionstorage','10.0.0.1',
-                '192.168.','172.16.','255.255.','00:00:00','erase-cookie'
-            ];
-            for (var i = 0; i < blacklist.length; i++) {
-                if (lower === blacklist[i] || lower.indexOf('http://') === 0 || lower.indexOf('https://') === 0) return;
-            }
-            if (/^[a-zA-Z_]+$/.test(c) && !/\d/.test(c) && confidence < 90) return;
-            if (/^\d+\.\d+\.\d+\.\d+$/.test(c)) return;
-            if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(c)) return;
-
-            if (/[\*\•\…]{1,}/.test(c) && /\d/.test(c)) {
-                partialMasks.push(c);
-            }
-
-            var key = c + "|" + layer;
-            if (seen[key]) return;
-            seen[key] = true;
-            findings.push({
-                code: c,
-                layer: layer,
-                confidence: confidence,
-                detail: String(detail || '').substring(0, 90)
-            });
-        }
-
-        // Layer 1: Document Cookies
+// Safe, non-hanging JS collector (Zero regexes, zero async fetch hangs!)
+private fun buildSafeDomCollectorJs(): String {
+    return """
+    (function() {
         try {
-            var rawCookies = document.cookie || '';
-            if (rawCookies) {
-                var parts = rawCookies.split(';');
-                for (var i = 0; i < parts.length; i++) {
-                    var kv = parts[i].split('=');
-                    if (kv.length >= 2) {
-                        var k = kv[0].trim();
-                        var v = kv.slice(1).join('=').trim();
-                        var kl = k.toLowerCase();
-                        var score = (kl.indexOf('user') !== -1 || kl.indexOf('login') !== -1 || kl.indexOf('voucher') !== -1 || kl.indexOf('card') !== -1 || kl.indexOf('code') !== -1 || kl.indexOf('uname') !== -1) ? 98 : 82;
-                        addFinding(v, '🍪 الكوكيز (Cookies)', score, 'Cookie: ' + k);
-                    }
-                }
-            }
-        } catch(e) {}
-
-        // Layer 2: LocalStorage & SessionStorage
-        try {
-            for (var i = 0; i < localStorage.length; i++) {
-                var lk = localStorage.key(i);
-                var lv = localStorage.getItem(lk);
-                addFinding(lv, '💾 التخزين المحلي (LocalStorage)', 94, 'Key: ' + lk);
-            }
-        } catch(e) {}
-        try {
-            for (var i = 0; i < sessionStorage.length; i++) {
-                var sk = sessionStorage.key(i);
-                var sv = sessionStorage.getItem(sk);
-                addFinding(sv, '💾 ذاكرة الجلسة (SessionStorage)', 94, 'Key: ' + sk);
-            }
-        } catch(e) {}
-
-        function scanHtmlSource(htmlText, sourceTag) {
-            if (!htmlText) return;
-
-            // Layer 3: HTML Comments <!-- ... --> (Catches commented-out $(username) rows!)
-            var commentRegex = /<!--([\\s\\S]*?)-->/g;
-            var cm;
-            while ((cm = commentRegex.exec(htmlText)) !== null) {
-                var commentBody = cm[1];
-                var numMatches = commentBody.match(/\\b[0-9A-Za-z]{4,16}\\b/g) || [];
-                for (var j = 0; j < numMatches.length; j++) {
-                    if (/\\d{3,}/.test(numMatches[j])) {
-                        addFinding(numMatches[j], '🕵️ تعليقات السورس المخفية (' + sourceTag + ')', 95, 'داخل <!-- تعليق مخفي -->');
-                    }
-                }
-            }
-
-            // Layer 4: Inline JS Variables & Pre-Masking Strings
-            var jsVarRegex = /(?:user(?:name)?|voucher|card|login|uname|code|account|member|id_card)\\s*[:=]\\s*["']([^"'\\r\\n]{3,20})["']/gi;
-            var jm;
-            while ((jm = jsVarRegex.exec(htmlText)) !== null) {
-                if (jm[1].indexOf('$(') === -1) {
-                    addFinding(jm[1], '📜 متغيرات السكربت (' + sourceTag + ')', 96, jm[0].substring(0, 60));
-                }
-            }
-
-            // Catch strings right before .substring / .substr / .slice (Unmasking half-shown vouchers!)
-            var sliceRegex = /["']([0-9A-Za-z]{4,20})["']\\s*\\.(?:substring|substr|slice|replace)\\s*\\(/g;
-            var sm;
-            while ((sm = sliceRegex.exec(htmlText)) !== null) {
-                addFinding(sm[1], '🔓 كرت كامل قبل القص النصي (' + sourceTag + ')', 99, sm[0]);
-            }
-
-            // URL params like ?username=... or erase-cookie
-            var urlParamRegex = /[?&](?:username|user|voucher|card|login|code)=([0-9A-Za-z%._-]{3,20})/gi;
-            var um;
-            while ((um = urlParamRegex.exec(htmlText)) !== null) {
-                addFinding(um[1], '🔗 روابط الجلسة المخفية (' + sourceTag + ')', 93, um[0]);
-            }
-
-            // Input fields in raw HTML
-            var inputRegex = /<input[^>]+name=["']?(?:username|user|voucher|card|code)["']?[^>]*value=["']([^"']{3,20})["']/gi;
-            var im;
-            while ((im = inputRegex.exec(htmlText)) !== null) {
-                if (im[1].indexOf('$(') === -1) {
-                    addFinding(im[1], '🔐 حقل إدخال مخفي (' + sourceTag + ')', 97, 'input value');
-                }
-            }
-        }
-
-        // Scan current DOM
-        try {
-            scanHtmlSource(document.documentElement.outerHTML, 'الصفحة الحالية');
-        } catch(e) {}
-
-        // Layer 5: Live DOM Inputs, Hidden Elements & Table Labels
-        try {
-            var inputs = document.querySelectorAll('input, textarea, select, [data-user], [data-username], [data-voucher]');
-            for (var i = 0; i < inputs.length; i++) {
-                var el = inputs[i];
-                var val = el.value || el.getAttribute('value') || el.getAttribute('data-user') || el.getAttribute('data-username') || el.getAttribute('data-voucher') || '';
-                var nameAttr = (el.name || el.id || el.className || '').toLowerCase();
-                if (val && val.length >= 3) {
-                    var sc = (nameAttr.indexOf('user') !== -1 || nameAttr.indexOf('voucher') !== -1 || nameAttr.indexOf('card') !== -1 || nameAttr.indexOf('login') !== -1) ? 97 : 84;
-                    addFinding(val, '🔐 عناصر الصفحة المخفية (DOM)', sc, 'Element: ' + (el.name || el.id || el.tagName));
-                }
-            }
-
-            var cells = document.querySelectorAll('td, th, span, div, p, b, strong, h1, h2, h3, h4, a');
-            var labelKeywords = ['اسم المستخدم', 'المستخدم', 'رقم الكرت', 'رمز الكرت', 'الكرت', 'الرمز', 'كود', 'مرحبا', 'أهلا', 'username', 'user', 'voucher', 'card', 'account', 'logged in'];
-            for (var i = 0; i < cells.length; i++) {
-                var txt = (cells[i].textContent || '').trim();
-                if (!txt || txt.length > 100) continue;
-                var txtLower = txt.toLowerCase();
-                for (var k = 0; k < labelKeywords.length; k++) {
-                    if (txtLower.indexOf(labelKeywords[k]) !== -1) {
-                        var nextEl = cells[i].nextElementSibling;
-                        if (nextEl && nextEl.textContent) {
-                            addFinding(nextEl.textContent.trim(), '📊 جدول بيانات الجلسة', 92, 'بجانب: ' + labelKeywords[k]);
-                        }
-                        var afterColon = txt.split(/[:：]/);
-                        if (afterColon.length >= 2) {
-                            addFinding(afterColon[afterColon.length - 1].trim(), '📊 بيانات الجلسة المباشرة', 91, txt);
-                        }
-                    }
-                }
-            }
-        } catch(e) {}
-
-        // Layer 6: Global Window JS Properties
-        try {
-            var winKeys = Object.keys(window);
-            for (var i = 0; i < winKeys.length; i++) {
-                var wk = winKeys[i];
-                var wkl = wk.toLowerCase();
-                if (wkl.indexOf('user') !== -1 || wkl.indexOf('voucher') !== -1 || wkl.indexOf('card') !== -1 || wkl.indexOf('login') !== -1 || wkl.indexOf('uname') !== -1) {
-                    var wv = window[wk];
-                    if (typeof wv === 'string' || typeof wv === 'number') {
-                        addFinding(String(wv), '⚡ ذاكرة الجافاسكربت الحية (window)', 96, 'window.' + wk);
-                    }
-                }
-            }
-        } catch(e) {}
-
-        // Layer 7: Background Multi-Endpoint Fetch (/status, /login, /status.html, /alogin.html)
-        var endpoints = ['/status', '/login', '/status.html', '/alogin.html'];
-        for (var eIdx = 0; eIdx < endpoints.length; eIdx++) {
+            var storageList = [];
             try {
-                var ep = endpoints[eIdx];
-                var resp = await fetch(ep, { credentials: 'include', cache: 'no-store' });
-                if (resp && resp.ok) {
-                    var rawText = await resp.text();
-                    scanHtmlSource(rawText, ep);
+                for (var i = 0; i < localStorage.length; i++) {
+                    var lk = localStorage.key(i);
+                    storageList.push({ k: 'local:' + lk, v: String(localStorage.getItem(lk) || '') });
                 }
-            } catch(err) {}
-        }
+            } catch(e) {}
+            try {
+                for (var j = 0; j < sessionStorage.length; j++) {
+                    var sk = sessionStorage.key(j);
+                    storageList.push({ k: 'session:' + sk, v: String(sessionStorage.getItem(sk) || '') });
+                }
+            } catch(e) {}
 
-        // Layer 8: Partial Code Unmasking Cross-Match
-        if (partialMasks.length > 0) {
-            for (var p = 0; p < partialMasks.length; p++) {
-                var maskStr = partialMasks[p];
-                var cleanPrefix = maskStr.replace(/[\\*\\•\\…]+.*$/, '');
-                var cleanSuffix = maskStr.replace(/^.*[\\*\\•\\…]+/, '');
-                for (var f = 0; f < findings.length; f++) {
-                    var cand = findings[f].code;
-                    if (cand !== maskStr && cand.indexOf('*') === -1) {
-                        var matchPre = cleanPrefix.length > 0 && cand.indexOf(cleanPrefix) === 0;
-                        var matchSuf = cleanSuffix.length > 0 && cand.slice(-cleanSuffix.length) === cleanSuffix;
-                        if (matchPre || matchSuf) {
-                            findings[f].confidence = 100;
-                            findings[f].layer = '🎯 تطابق كامل مع الكرت المقصوص (' + maskStr + ')';
+            var inputList = [];
+            try {
+                var els = document.querySelectorAll('input, textarea, select, [data-user], [data-username], [data-voucher]');
+                for (var k = 0; k < els.length; k++) {
+                    var el = els[k];
+                    var val = el.value || el.getAttribute('value') || el.getAttribute('data-user') || el.getAttribute('data-username') || el.getAttribute('data-voucher') || '';
+                    if (val && String(val).length >= 3) {
+                        inputList.push({ k: String(el.name || el.id || el.tagName), v: String(val) });
+                    }
+                }
+            } catch(e) {}
+
+            var winList = [];
+            try {
+                var keys = Object.keys(window);
+                for (var w = 0; w < keys.length; w++) {
+                    var wk = keys[w];
+                    var wkl = wk.toLowerCase();
+                    if (wkl.indexOf('user') !== -1 || wkl.indexOf('voucher') !== -1 || wkl.indexOf('card') !== -1 || wkl.indexOf('login') !== -1 || wkl.indexOf('code') !== -1 || wkl.indexOf('uname') !== -1) {
+                        var wv = window[wk];
+                        if (typeof wv === 'string' || typeof wv === 'number') {
+                            winList.push({ k: 'window.' + wk, v: String(wv) });
                         }
                     }
                 }
+            } catch(e) {}
+
+            var payload = JSON.stringify({
+                url: window.location.href,
+                cookie: document.cookie || '',
+                text: document.body ? (document.body.innerText || '') : '',
+                html: document.documentElement ? (document.documentElement.outerHTML || '') : '',
+                storage: storageList,
+                inputs: inputList,
+                winVars: winList
+            });
+            if (window.KrotyNativeBridge && window.KrotyNativeBridge.reportDomBundle) {
+                window.KrotyNativeBridge.reportDomBundle(payload);
             }
-        }
+        } catch(err) {}
+    })();
+    """.trimIndent()
+}
 
-        findings.sort(function(a, b) { return b.confidence - a.confidence; });
-        var payload = JSON.stringify({
-            url: window.location.href,
-            partials: partialMasks,
-            items: findings
-        });
-        if (window.KrotyForensicBridge && window.KrotyForensicBridge.postForensicReport) {
-            window.KrotyForensicBridge.postForensicReport(payload);
-        }
-    }
-    runDeepForensicScan();
-})();
-""".trimIndent()
+// Smart Auto-Pilot Login JS: Detects login form, injects voucher, and clicks Login/Submit automatically!
+private fun buildAutoPilotLoginJs(voucherCode: String): String {
+    val safeCode = voucherCode.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"")
+    return """
+    (function() {
+        try {
+            var code = '$safeCode';
+            if (!code) return;
+            if (window.__krotyAutoSubmittedCode === code) return;
 
-private fun parseForensicResults(
-    context: android.content.Context,
-    targetUrl: String,
-    jsonStr: String
-): Pair<List<String>, List<ForensicCandidateItem>> {
-    val results = mutableListOf<ForensicCandidateItem>()
-    val partials = mutableListOf<String>()
-    val seenCodes = mutableSetOf<String>()
+            var inputs = Array.from(document.querySelectorAll('input'));
+            var userField = null;
+            var passField = null;
 
-    // Native Android CookieManager inspection (captures HttpOnly & root gateway cookies!)
-    try {
-        val cm = android.webkit.CookieManager.getInstance()
-        val urlsToCheck = listOf(
-            targetUrl,
-            detectActiveGatewayUrl(context),
-            "${detectActiveGatewayUrl(context)}/status",
-            "${detectActiveGatewayUrl(context)}/login"
-        )
-        for (u in urlsToCheck) {
-            val cookieStr = cm.getCookie(u)
-            if (!cookieStr.isNullOrBlank()) {
-                for (part in cookieStr.split(";")) {
-                    val kv = part.split("=", limit = 2)
-                    if (kv.size == 2) {
-                        val k = kv[0].trim()
-                        val v = java.net.URLDecoder.decode(kv[1].trim(), "UTF-8").trim()
-                        val kl = k.lowercase()
-                        if (v.length in 3..24 && !v.equals("true", true) && !v.equals("false", true)) {
-                            val isVoucherKey = kl.contains("user") || kl.contains("login") || kl.contains("voucher") || kl.contains("card") || kl.contains("code") || kl.contains("uname")
-                            val conf = if (isVoucherKey) 99 else 85
-                            if (seenCodes.add("$v|native_cookie")) {
-                                results.add(
-                                    ForensicCandidateItem(
-                                        code = v,
-                                        sourceLayer = "🍪 كوكيز النظام العميقة (Native CookieManager)",
-                                        confidence = conf,
-                                        rawDetail = "Cookie [$k] on $u"
-                                    )
-                                )
-                            }
-                        }
+            for (var i = 0; i < inputs.length; i++) {
+                var inp = inputs[i];
+                var type = (inp.type || 'text').toLowerCase();
+                if (type === 'hidden' || type === 'submit' || type === 'button' || type === 'checkbox' || type === 'radio') continue;
+                var nameId = ((inp.name || '') + ' ' + (inp.id || '') + ' ' + (inp.placeholder || '') + ' ' + (inp.className || '')).toLowerCase();
+                if (!userField && (nameId.indexOf('user') !== -1 || nameId.indexOf('voucher') !== -1 || nameId.indexOf('card') !== -1 || nameId.indexOf('code') !== -1 || nameId.indexOf('uname') !== -1 || nameId.indexOf('كرت') !== -1 || nameId.indexOf('رمز') !== -1 || nameId.indexOf('مستخدم') !== -1)) {
+                    userField = inp;
+                } else if (!passField && type === 'password') {
+                    passField = inp;
+                }
+            }
+
+            if (!userField) {
+                for (var j = 0; j < inputs.length; j++) {
+                    var t = (inputs[j].type || 'text').toLowerCase();
+                    if ((t === 'text' || t === 'tel' || t === 'number' || t === 'password') && inputs[j].offsetParent !== null) {
+                        userField = inputs[j];
+                        break;
                     }
                 }
             }
-        }
-    } catch (_: Exception) {}
 
-    try {
-        val root = org.json.JSONObject(jsonStr)
-        val pArr = root.optJSONArray("partials")
-        if (pArr != null) {
-            for (i in 0 until pArr.length()) {
-                val p = pArr.optString(i)
-                if (p.isNotBlank() && !partials.contains(p)) partials.add(p)
-            }
-        }
-        val arr = root.optJSONArray("items")
-        if (arr != null) {
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
-                val c = obj.optString("code").trim()
-                val l = obj.optString("layer")
-                val conf = obj.optInt("confidence", 80)
-                val det = obj.optString("detail")
-                if (c.isNotBlank() && seenCodes.add("$c|$l")) {
-                    results.add(ForensicCandidateItem(c, l, conf, det))
+            if (!userField) return;
+
+            window.__krotyAutoSubmittedCode = code;
+
+            function setNativeValue(el, val) {
+                try {
+                    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    if (setter) {
+                        setter.call(el, val);
+                    } else {
+                        el.value = val;
+                    }
+                } catch(e) {
+                    el.value = val;
                 }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('keyup', { bubbles: true }));
             }
-        }
-    } catch (_: Exception) {}
 
-    return partials to results.sortedByDescending { it.confidence }
+            setNativeValue(userField, code);
+            userField.style.border = '2px solid #00E676';
+
+            if (passField && passField !== userField && !passField.value) {
+                setNativeValue(passField, code);
+            }
+
+            if (window.KrotyNativeBridge && window.KrotyNativeBridge.reportAutoLoginSubmitted) {
+                window.KrotyNativeBridge.reportAutoLoginSubmitted(code);
+            }
+
+            setTimeout(function() {
+                try {
+                    if (typeof window.doLogin === 'function') {
+                        window.doLogin();
+                        return;
+                    }
+                    var form = userField.form || document.querySelector('form[name="login"]') || document.querySelector('form');
+                    var btn = null;
+                    var candidates = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a.btn, a.button, [onclick*="login"], [onclick*="Login"]'));
+                    for (var b = 0; b < candidates.length; b++) {
+                        var el = candidates[b];
+                        var txt = ((el.innerText || el.value || el.title || '') + ' ' + (el.id || '') + ' ' + (el.className || '')).toLowerCase();
+                        if (txt.indexOf('دخول') !== -1 || txt.indexOf('تسجيل') !== -1 || txt.indexOf('اتصال') !== -1 || txt.indexOf('موافق') !== -1 || txt.indexOf('login') !== -1 || txt.indexOf('connect') !== -1 || txt.indexOf('submit') !== -1) {
+                            btn = el;
+                            break;
+                        }
+                    }
+                    if (btn) {
+                        btn.click();
+                    } else if (form) {
+                        form.submit();
+                    }
+                } catch(e) {}
+            }, 350);
+        } catch(err) {}
+    })();
+    """.trimIndent()
 }
 
 @Composable
-fun DeepForensicInspectorPanel(
+fun PatternGuidedForensicSheet(
     candidates: List<ForensicCandidateItem>,
     partialMasks: List<String>,
     isScanning: Boolean,
-    onRescan: () -> Unit,
+    selectedLength: Int?,
+    onSelectLength: (Int?) -> Unit,
+    prefixFilter: String,
+    onPrefixChange: (String) -> Unit,
+    suffixFilter: String,
+    onSuffixChange: (String) -> Unit,
+    onTriggerScan: () -> Unit,
+    onSaveToWallet: (String) -> Unit,
     onClose: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var partialFilterInput by remember { mutableStateOf("") }
-
-    val filteredCandidates = remember(candidates, partialFilterInput) {
-        if (partialFilterInput.isBlank()) {
-            candidates
-        } else {
-            val query = partialFilterInput.trim()
-            candidates.filter { it.code.contains(query, ignoreCase = true) }
-        }
-    }
-
-    val bestUnmaskedCandidate = remember(filteredCandidates) {
-        filteredCandidates.firstOrNull { !it.code.contains("*") && !it.code.contains("•") }
-            ?: filteredCandidates.firstOrNull()
+    val bestCandidate = remember(candidates) {
+        candidates.firstOrNull { !it.code.contains("*") && !it.code.contains("•") }
+            ?: candidates.firstOrNull()
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
         border = BorderStroke(1.5.dp, Color(0xFF00E5FF)),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(18.dp)
     ) {
         Column(
             modifier = Modifier
@@ -944,24 +1390,97 @@ fun DeepForensicInspectorPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF))
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "🕵️‍♂️ الفحص الجنائي العميق للكرت الضائع",
+                        text = "🕵️‍♂️ البحث العميق الموجه عن الكرت الضائع",
                         color = Color(0xFFF8FAFC),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp,
                         maxLines = 1,
                         softWrap = false
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onRescan, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Default.Refresh, contentDescription = "إعادة الفحص", tint = Color(0xFF00E5FF))
+                    Button(
+                        onClick = onTriggerScan,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color.Black),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("🚀 فحص الآن", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     }
-                    IconButton(onClick = onClose, modifier = Modifier.size(30.dp)) {
+                    IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color(0xFF94A3B8))
+                    }
+                }
+            }
+
+            // 1. User Pattern Suggestion Controls (Card Length + Prefix + Suffix)
+            Surface(
+                color = Color(0xFF162238),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "1️⃣ حدد عدد أرقام الكرت في هذه الشبكة (لتصفية الكود بدقة):",
+                        color = Color(0xFF00E5FF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    val lengths = listOf(null to "الكل (تلقائي)", 6 to "6 أرقام", 7 to "7 أرقام", 8 to "8 أرقام", 9 to "9 أرقام", 10 to "10 أرقام", 11 to "11 رقم", 12 to "12 رقم")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        lengths.forEach { (lenVal, label) ->
+                            FilterChip(
+                                selected = selectedLength == lenVal,
+                                onClick = { onSelectLength(lenVal) },
+                                label = { Text(label, fontSize = 11.sp, maxLines = 1, softWrap = false) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.25f),
+                                    selectedLabelColor = Color(0xFF00E5FF)
+                                )
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "2️⃣ هل توجد أرقام ثابتة في بداية أو نهاية الكرت؟ (اختياري):",
+                        color = Color(0xFFFFB300),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = prefixFilter,
+                            onValueChange = onPrefixChange,
+                            label = { Text("بداية الكرت (مثال: 55)", fontSize = 10.sp, maxLines = 1) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = suffixFilter,
+                            onValueChange = onSuffixChange,
+                            label = { Text("نهاية الكرت (مثال: 90)", fontSize = 10.sp, maxLines = 1) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -970,46 +1489,27 @@ fun DeepForensicInspectorPanel(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color(0xFF00E5FF),
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color(0xFF00E5FF), strokeWidth = 2.dp)
                     Text(
-                        text = "جاري فحص الكوكيز، السكربتات، تعليقات السورس، وصفحات /status و /login...",
+                        text = "جاري سحب سورس البوابة (/status و /login) وفحص الكوكيز والتعليقات...",
                         color = Color(0xFF00E5FF),
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            if (partialMasks.isNotEmpty()) {
-                Surface(
-                    color = Color(0xFFFFB300).copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFFB300).copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "🧩 تم رصد كرت مقصوص في الشاشة (${partialMasks.joinToString(" , ")}) — جاري مطابقته مع السورس العميق!",
-                        color = Color(0xFFFFB300),
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(8.dp)
+                        maxLines = 1
                     )
                 }
             }
 
-            if (bestUnmaskedCandidate != null) {
+            if (bestCandidate != null) {
                 Surface(
                     color = Color(0xFF00E676).copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.5.dp, Color(0xFF00E676)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Row(
@@ -1018,7 +1518,7 @@ fun DeepForensicInspectorPanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "🎯 الكرت المستخرج للجلسة الحالية:",
+                                text = "🎯 أفضل كرت مطابق تم استخراجه:",
                                 color = Color(0xFF00E676),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
@@ -1026,10 +1526,10 @@ fun DeepForensicInspectorPanel(
                                 softWrap = false
                             )
                             Text(
-                                text = "ثقة ${bestUnmaskedCandidate.confidence}%",
+                                text = "تطابق ${bestCandidate.confidence}%",
                                 color = Color(0xFF00E5FF),
-                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -1041,29 +1541,39 @@ fun DeepForensicInspectorPanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = bestUnmaskedCandidate.code,
+                                text = bestCandidate.code,
                                 color = Color(0xFFF8FAFC),
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 22.sp
+                                fontSize = 21.sp
                             )
-                            Button(
-                                onClick = { copyVoucherToClipboard(context, bestUnmaskedCandidate.code) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF00E676),
-                                    contentColor = Color.Black
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text("📋 نسخ الكرت", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(
+                                    onClick = { copyVoucherToClipboard(context, bestCandidate.code) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color.Black),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("📋 نسخ", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                }
+                                Button(
+                                    onClick = {
+                                        onSaveToWallet(bestCandidate.code)
+                                        copyVoucherToClipboard(context, bestCandidate.code)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("💾 حفظ بالمحفظة", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                }
                             }
                         }
 
                         Text(
-                            text = "المصدر: ${bestUnmaskedCandidate.sourceLayer} (${bestUnmaskedCandidate.rawDetail})",
+                            text = "${bestCandidate.sourceLayer} • ${bestCandidate.rawDetail}",
                             color = Color(0xFF94A3B8),
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
@@ -1071,35 +1581,27 @@ fun DeepForensicInspectorPanel(
                 }
             } else if (!isScanning) {
                 Text(
-                    text = "لم يتم العثور على كرت مباشر بعد. اضغط على (🔑 صفحة الدخول) أو (📊 صفحة الرصيد) بالأسفل ثم اضغط تحديث الفحص.",
+                    text = "💡 نصيحة: اختر عدد أرقام الكرت أو اكتب أول رقمين منه في الخانة أعلاه، أو افتح (/status) ثم اضغط (🚀 فحص الآن).",
                     color = Color(0xFFFFB300),
                     fontSize = 11.sp
                 )
             }
 
-            OutlinedTextField(
-                value = partialFilterInput,
-                onValueChange = { partialFilterInput = it },
-                label = { Text("هل يظهر نصف الكرت؟ اكتب الأرقام الظاهرة هنا لمطابقتها", fontSize = 11.sp) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            if (filteredCandidates.size > 1) {
+            if (candidates.size > 1) {
                 Text(
-                    text = "كافة النتائج المكتشفة في الطبقات العميقة (${filteredCandidates.size}):",
+                    text = "جميع الأكواد المكتشفة المطابقة للمواصفات (${candidates.size}):",
                     color = Color(0xFF94A3B8),
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 150.dp)
+                        .heightIn(max = 135.dp)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    filteredCandidates.forEach { item ->
+                    candidates.forEach { item ->
                         Surface(
                             color = Color(0xFF1E293B),
                             shape = RoundedCornerShape(8.dp),
@@ -1108,17 +1610,17 @@ fun DeepForensicInspectorPanel(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = item.code,
+                                        text = "${item.code}  (${item.confidence}%)",
                                         color = Color(0xFF00E5FF),
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
+                                        fontSize = 14.sp
                                     )
                                     Text(
                                         text = "${item.sourceLayer} • ${item.rawDetail}",
@@ -1128,8 +1630,16 @@ fun DeepForensicInspectorPanel(
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                 }
-                                TextButton(onClick = { copyVoucherToClipboard(context, item.code) }) {
-                                    Text("نسخ", color = Color(0xFF00E676), fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(onClick = { copyVoucherToClipboard(context, item.code) }) {
+                                        Text("نسخ", color = Color(0xFF00E5FF), fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                    }
+                                    TextButton(onClick = {
+                                        onSaveToWallet(item.code)
+                                        copyVoucherToClipboard(context, item.code)
+                                    }) {
+                                        Text("حفظ", color = Color(0xFF00E676), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                    }
                                 }
                             }
                         }
@@ -1141,21 +1651,71 @@ fun DeepForensicInspectorPanel(
 }
 
 @Composable
-fun StandaloneLostVoucherForensicDialog(
+fun ModernCyberPortalCockpitDialog(
+    initialAutoLoginVoucher: String?,
+    startWithForensicSheet: Boolean,
+    onSaveVoucherToApp: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val baseUrl = remember { detectActiveGatewayUrl(context) }
-    var probeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
-    var isScanning by remember { mutableStateOf(true) }
-    var candidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
-    var partialMasks by remember { mutableStateOf<List<String>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    val baseGateway = remember { detectActiveGatewayUrl(context) }
 
-    val triggerForensicScan: (android.webkit.WebView?) -> Unit = { wv ->
-        if (wv != null) {
-            isScanning = true
-            wv.evaluateJavascript(DEEP_FORENSIC_JS_SCRIPT, null)
+    var webViewRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    var currentUrl by remember { mutableStateOf("$baseGateway/status") }
+    var isDesktopMode by remember { mutableStateOf(false) }
+    var showForensicSheet by remember { mutableStateOf(startWithForensicSheet) }
+    var isForensicScanning by remember { mutableStateOf(false) }
+
+    var selectedLength by remember { mutableStateOf<Int?>(null) }
+    var prefixFilter by remember { mutableStateOf("") }
+    var suffixFilter by remember { mutableStateOf("") }
+
+    var rawScrapedPages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var latestDomBundleJson by remember { mutableStateOf("") }
+    var forensicCandidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
+    var forensicPartials by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Instant re-filtering whenever user changes Card Length, Prefix, or Suffix!
+    LaunchedEffect(rawScrapedPages, latestDomBundleJson, selectedLength, prefixFilter, suffixFilter) {
+        val (p, c) = analyzeSourcesForLostVoucher(
+            context = context,
+            targetUrl = currentUrl,
+            sourcesMap = rawScrapedPages,
+            jsBundleJson = latestDomBundleJson,
+            expectedLength = selectedLength,
+            prefixFilter = prefixFilter,
+            suffixFilter = suffixFilter
+        )
+        forensicPartials = p
+        forensicCandidates = c
+    }
+
+    val runHybridForensicScan: () -> Unit = {
+        isForensicScanning = true
+        webViewRef?.evaluateJavascript(buildSafeDomCollectorJs(), null)
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val pages = fetchGatewayPagesNative(context, baseGateway)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (pages.isNotEmpty()) {
+                    rawScrapedPages = pages
+                    // Also extract balance from native /status HTML immediately!
+                    val statusHtml = pages["/status"] ?: pages["/status.html"] ?: ""
+                    if (statusHtml.isNotBlank()) {
+                        val (u, bal, tm) = extractLiveBalanceFromTextAndHtml("", statusHtml)
+                        if (u.isNotBlank() || bal.isNotBlank() || tm.isNotBlank()) {
+                            KrotyAutoPilotHub.persistSession(context, u, bal, tm)
+                        }
+                    }
+                }
+                isForensicScanning = false
+            }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        bindProcessToActiveWifi(context)
+        runHybridForensicScan()
     }
 
     androidx.compose.ui.window.Dialog(
@@ -1165,66 +1725,351 @@ fun StandaloneLostVoucherForensicDialog(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0A0E17))
-                .padding(8.dp)
+                .background(Color(0xFF080D16))
         ) {
-            DeepForensicInspectorPanel(
-                candidates = candidates,
-                partialMasks = partialMasks,
-                isScanning = isScanning,
-                onRescan = { triggerForensicScan(probeWebView) },
-                onClose = onDismiss
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Unified Modern Glassmorphic Cockpit Header
+            Surface(
+                color = Color(0xFF0F172A),
+                tonalElevation = 10.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                AssistChip(
-                    onClick = { probeWebView?.loadUrl("$baseUrl/status") },
-                    label = { Text("📊 فحص /status", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                AssistChip(
-                    onClick = { probeWebView?.loadUrl("$baseUrl/login") },
-                    label = { Text("🔑 فحص /login", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                AssistChip(
-                    onClick = { probeWebView?.loadUrl("$baseUrl/alogin.html") },
-                    label = { Text("⚡ فحص /alogin.html", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(Color(0xFF16243D), Color(0xFF0B1324))
+                            )
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Top Row: Navigation + URL Pill + Desktop + Close
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        IconButton(
+                            onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF1E293B))
+                        ) {
+                            Icon(Icons.Default.ArrowForward, contentDescription = "رجوع", tint = Color(0xFFF8FAFC), modifier = Modifier.size(16.dp))
+                        }
+
+                        IconButton(
+                            onClick = {
+                                webViewRef?.reload()
+                                runHybridForensicScan()
+                            },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF1E293B))
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF070B12))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(Color(0xFF00E676))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = currentUrl,
+                                color = Color(0xFF00E5FF),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                isDesktopMode = !isDesktopMode
+                                webViewRef?.settings?.apply {
+                                    userAgentString = if (isDesktopMode) {
+                                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+                                    } else null
+                                    useWideViewPort = true
+                                    loadWithOverviewMode = true
+                                }
+                                webViewRef?.reload()
+                            },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isDesktopMode) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B))
+                        ) {
+                            Icon(Icons.Default.Computer, contentDescription = "كمبيوتر", tint = if (isDesktopMode) Color(0xFF00E5FF) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFFF5252).copy(alpha = 0.2f))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    // Live Auto-Pilot Balance & Session Telemetry Strip
+                    Surface(
+                        color = Color(0xFF0D1B2A),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = if (KrotyAutoPilotHub.liveVoucherCode.isNotBlank()) "💳 الكرت: ${KrotyAutoPilotHub.liveVoucherCode}" else "🤖 ${KrotyAutoPilotHub.autoPilotStatusMessage}",
+                                    color = Color(0xFF00E676),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                if (KrotyAutoPilotHub.liveBalanceText.isNotBlank()) {
+                                    Text(
+                                        text = "📦 الرصيد: ${KrotyAutoPilotHub.liveBalanceText}",
+                                        color = Color(0xFF00E5FF),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                if (KrotyAutoPilotHub.liveTimeText.isNotBlank()) {
+                                    Text(
+                                        text = "⏱️ الوقت: ${KrotyAutoPilotHub.liveTimeText}",
+                                        color = Color(0xFFFFB300),
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                            if (KrotyAutoPilotHub.liveVoucherCode.isNotBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        onSaveVoucherToApp(KrotyAutoPilotHub.liveVoucherCode)
+                                        copyVoucherToClipboard(context, KrotyAutoPilotHub.liveVoucherCode)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Text("💾 حفظ ونسخ", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        }
+                    }
+
+                    // Single Clean Row of Action Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AssistChip(
+                            onClick = {
+                                showForensicSheet = !showForensicSheet
+                                if (showForensicSheet) runHybridForensicScan()
+                            },
+                            label = {
+                                Text("🕵️‍♂️ البحث عن الكرت الضائع", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (showForensicSheet) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                labelColor = Color(0xFF00E5FF)
+                            ),
+                            border = BorderStroke(1.2.dp, Color(0xFF00E5FF))
+                        )
+
+                        AssistChip(
+                            onClick = {
+                                val codeToUse = initialAutoLoginVoucher ?: KrotyAutoPilotHub.liveVoucherCode
+                                if (codeToUse.isNotBlank()) {
+                                    webViewRef?.evaluateJavascript(buildAutoPilotLoginJs(codeToUse), null)
+                                } else {
+                                    webViewRef?.loadUrl("$baseGateway/login")
+                                }
+                            },
+                            label = {
+                                Text("⚡ دخول تلقائي فوري", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = Color(0xFF00E676).copy(alpha = 0.2f),
+                                labelColor = Color(0xFF00E676)
+                            ),
+                            border = BorderStroke(1.2.dp, Color(0xFF00E676))
+                        )
+
+                        AssistChip(
+                            onClick = {
+                                currentUrl = "$baseGateway/status"
+                                webViewRef?.loadUrl(currentUrl)
+                            },
+                            label = {
+                                Text("📊 الرصيد (/status)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = Color(0xFF1E293B),
+                                labelColor = Color(0xFFF8FAFC)
+                            )
+                        )
+
+                        AssistChip(
+                            onClick = {
+                                currentUrl = "$baseGateway/login"
+                                webViewRef?.loadUrl(currentUrl)
+                            },
+                            label = {
+                                Text("🔑 الدخول (/login)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = Color(0xFF1E293B),
+                                labelColor = Color(0xFFF8FAFC)
+                            )
+                        )
+
+                        AssistChip(
+                            onClick = {
+                                currentUrl = "$baseGateway/logout"
+                                webViewRef?.loadUrl(currentUrl)
+                            },
+                            label = {
+                                Text("❄️ تجميد الكرت (/logout)", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = Color(0xFF1E293B),
+                                labelColor = Color(0xFFFF5252)
+                            )
+                        )
+                    }
+                }
+            }
+
+            if (showForensicSheet) {
+                PatternGuidedForensicSheet(
+                    candidates = forensicCandidates,
+                    partialMasks = forensicPartials,
+                    isScanning = isForensicScanning,
+                    selectedLength = selectedLength,
+                    onSelectLength = { selectedLength = it },
+                    prefixFilter = prefixFilter,
+                    onPrefixChange = { prefixFilter = it },
+                    suffixFilter = suffixFilter,
+                    onSuffixChange = { suffixFilter = it },
+                    onTriggerScan = { runHybridForensicScan() },
+                    onSaveToWallet = { code ->
+                        onSaveVoucherToApp(code)
+                    },
+                    onClose = { showForensicSheet = false }
                 )
             }
 
+            // Clean Modern WebView Container
             androidx.compose.ui.viewinterop.AndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(8.dp)
-                    .clip(RoundedCornerShape(14.dp)),
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(16.dp)),
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
                         android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
                         addJavascriptInterface(
-                            ForensicJsBridge { jsonStr ->
-                                val (p, c) = parseForensicResults(ctx, url ?: baseUrl, jsonStr)
-                                partialMasks = p
-                                candidates = c
-                                isScanning = false
-                            },
-                            "KrotyForensicBridge"
+                            KrotyNativeJsBridge(
+                                onDomBundleReceived = { jsonStr ->
+                                    latestDomBundleJson = jsonStr
+                                    try {
+                                        val root = org.json.JSONObject(jsonStr)
+                                        val txt = root.optString("text", "")
+                                        val htm = root.optString("html", "")
+                                        val (u, bal, tm) = extractLiveBalanceFromTextAndHtml(txt, htm)
+                                        if (u.isNotBlank() || bal.isNotBlank() || tm.isNotBlank()) {
+                                            KrotyAutoPilotHub.persistSession(context, u, bal, tm)
+                                            KrotyAutoPilotHub.autoPilotStatusMessage = "✅ تم استخراج بيانات الرصيد تلقائياً"
+                                        }
+                                    } catch (_: Exception) {}
+                                    isForensicScanning = false
+                                },
+                                onAutoLoginTriggered = { submittedCode ->
+                                    KrotyAutoPilotHub.autoPilotStatusMessage = "🚀 تم إدخال الكرت ($submittedCode) والضغط على دخول تلقائياً!"
+                                    KrotyAutoPilotHub.persistSession(context, submittedCode, "", "")
+                                }
+                            ),
+                            "KrotyNativeBridge"
                         )
+
                         webViewClient = object : android.webkit.WebViewClient() {
                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                                 super.onPageFinished(view, url)
-                                triggerForensicScan(view)
+                                if (!url.isNullOrBlank()) currentUrl = url
+
+                                val codeToAutoLogin = KrotyAutoPilotHub.pendingAutoLoginVoucher
+                                if (!codeToAutoLogin.isNullOrBlank()) {
+                                    view?.evaluateJavascript(buildAutoPilotLoginJs(codeToAutoLogin), null)
+                                }
+
+                                // Collect DOM & extract balance automatically after every page load
+                                view?.evaluateJavascript(buildSafeDomCollectorJs(), null)
+
+                                // If redirected to /alogin, automatically hop to /status to read the balance table!
+                                if (url != null && (url.contains("/alogin") || url.contains("login?dst="))) {
+                                    KrotyAutoPilotHub.pendingAutoLoginVoucher = null
+                                    view?.postDelayed({
+                                        view.loadUrl("$baseGateway/status")
+                                    }, 700)
+                                }
                             }
                         }
-                        probeWebView = this
-                        loadUrl("$baseUrl/status")
+
+                        webViewRef = this
+                        val startTarget = if (!initialAutoLoginVoucher.isNullOrBlank()) {
+                            "$baseGateway/login"
+                        } else {
+                            "$baseGateway/status"
+                        }
+                        currentUrl = startTarget
+                        loadUrl(startTarget)
                     }
                 }
             )
@@ -1239,245 +2084,114 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
     update: (T) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var capturedWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
-    var currentUrlDisplay by remember { mutableStateOf("http://10.0.0.1/login") }
-    var isDesktopMode by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val baseGateway = remember { detectActiveGatewayUrl(context) }
 
-    var showForensicDrawer by remember { mutableStateOf(false) }
+    var capturedWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    var currentUrlDisplay by remember { mutableStateOf("$baseGateway/login") }
+    var showForensicSheet by remember { mutableStateOf(false) }
     var isForensicScanning by remember { mutableStateOf(false) }
-    var forensicCandidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
-    var forensicPartials by remember { mutableStateOf<List<String>>(emptyList()) }
     var bridgeAttached by remember { mutableStateOf(false) }
 
-    val runForensicOnCapturedWebView: () -> Unit = {
-        val wv = capturedWebView
-        if (wv != null) {
-            showForensicDrawer = true
-            isForensicScanning = true
-            val (nativePartials, nativeItems) = parseForensicResults(
-                context,
-                wv.url ?: currentUrlDisplay,
-                "{}"
-            )
-            if (nativeItems.isNotEmpty()) {
-                forensicPartials = nativePartials
-                forensicCandidates = nativeItems
+    var selectedLength by remember { mutableStateOf<Int?>(null) }
+    var prefixFilter by remember { mutableStateOf("") }
+    var suffixFilter by remember { mutableStateOf("") }
+
+    var rawScrapedPages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var latestDomBundleJson by remember { mutableStateOf("") }
+    var forensicCandidates by remember { mutableStateOf<List<ForensicCandidateItem>>(emptyList()) }
+    var forensicPartials by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    LaunchedEffect(rawScrapedPages, latestDomBundleJson, selectedLength, prefixFilter, suffixFilter) {
+        val (p, c) = analyzeSourcesForLostVoucher(
+            context = context,
+            targetUrl = currentUrlDisplay,
+            sourcesMap = rawScrapedPages,
+            jsBundleJson = latestDomBundleJson,
+            expectedLength = selectedLength,
+            prefixFilter = prefixFilter,
+            suffixFilter = suffixFilter
+        )
+        forensicPartials = p
+        forensicCandidates = c
+    }
+
+    val runHybridScan: () -> Unit = {
+        isForensicScanning = true
+        capturedWebView?.evaluateJavascript(buildSafeDomCollectorJs(), null)
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val pages = fetchGatewayPagesNative(context, baseGateway)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (pages.isNotEmpty()) rawScrapedPages = pages
+                isForensicScanning = false
             }
-            wv.evaluateJavascript(DEEP_FORENSIC_JS_SCRIPT, null)
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color(0xFF0A0E17))) {
+    Column(modifier = modifier.fillMaxSize().background(Color(0xFF080D16))) {
         Surface(
             color = Color(0xFF0F172A),
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            listOf(Color(0xFF162238), Color(0xFF0B1120))
-                        )
-                    )
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    IconButton(
-                        onClick = { if (capturedWebView?.canGoBack() == true) capturedWebView?.goBack() },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E293B))
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowForward,
-                            contentDescription = "رجوع",
-                            tint = Color(0xFFF8FAFC),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                AssistChip(
+                    onClick = {
+                        showForensicSheet = !showForensicSheet
+                        if (showForensicSheet) runHybridScan()
+                    },
+                    label = {
+                        Text("🕵️‍♂️ البحث الموجه عن الكرت الضائع", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Color(0xFF00E5FF).copy(alpha = 0.22f),
+                        labelColor = Color(0xFF00E5FF)
+                    ),
+                    border = BorderStroke(1.2.dp, Color(0xFF00E5FF))
+                )
 
-                    IconButton(
-                        onClick = {
-                            currentUrlDisplay = capturedWebView?.url ?: currentUrlDisplay
-                            capturedWebView?.reload()
-                        },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E293B))
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "تحديث",
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF090D16))
-                            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(Color(0xFF00E676))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = capturedWebView?.url ?: currentUrlDisplay,
-                            color = Color(0xFF00E5FF),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            isDesktopMode = !isDesktopMode
-                            capturedWebView?.settings?.apply {
-                                userAgentString = if (isDesktopMode) {
-                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                                } else {
-                                    null
-                                }
-                                useWideViewPort = true
-                                loadWithOverviewMode = true
-                            }
-                            capturedWebView?.reload()
-                        },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isDesktopMode) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B))
-                    ) {
-                        Icon(
-                            Icons.Default.Computer,
-                            contentDescription = "وضع الكمبيوتر",
-                            tint = if (isDesktopMode) Color(0xFF00E5FF) else Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val extractHost: () -> String = {
-                        val u = capturedWebView?.url ?: "http://10.0.0.1"
-                        try {
-                            val uri = android.net.Uri.parse(u)
-                            if (!uri.host.isNullOrBlank()) "${uri.scheme ?: "http"}://${uri.host}" else "http://10.0.0.1"
-                        } catch (_: Exception) {
-                            "http://10.0.0.1"
+                AssistChip(
+                    onClick = {
+                        val code = KrotyAutoPilotHub.pendingAutoLoginVoucher ?: KrotyAutoPilotHub.liveVoucherCode
+                        if (code.isNotBlank()) {
+                            capturedWebView?.evaluateJavascript(buildAutoPilotLoginJs(code), null)
                         }
-                    }
-
-                    AssistChip(
-                        onClick = { runForensicOnCapturedWebView() },
-                        label = {
-                            Text("🕵️‍♂️ كشف الكرت الضائع (فحص عميق)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF00E676).copy(alpha = 0.2f),
-                            labelColor = Color(0xFF00E676)
-                        ),
-                        border = BorderStroke(1.5.dp, Color(0xFF00E676))
-                    )
-
-                    AssistChip(
-                        onClick = {
-                            val target = "${extractHost()}/status"
-                            currentUrlDisplay = target
-                            capturedWebView?.loadUrl(target)
-                        },
-                        label = {
-                            Text("📊 صفحة الرصيد (/status)", fontSize = 11.sp, maxLines = 1, softWrap = false)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E293B),
-                            labelColor = Color(0xFF00E5FF)
-                        ),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
-                    )
-
-                    AssistChip(
-                        onClick = {
-                            val target = "${extractHost()}/login"
-                            currentUrlDisplay = target
-                            capturedWebView?.loadUrl(target)
-                        },
-                        label = {
-                            Text("🔑 صفحة الدخول (/login)", fontSize = 11.sp, maxLines = 1, softWrap = false)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E293B),
-                            labelColor = Color(0xFF00E676)
-                        ),
-                        border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f))
-                    )
-
-                    AssistChip(
-                        onClick = {
-                            val target = "${extractHost()}/logout"
-                            currentUrlDisplay = target
-                            capturedWebView?.loadUrl(target)
-                        },
-                        label = {
-                            Text("❄️ تجميد الكرت (/logout)", fontSize = 11.sp, maxLines = 1, softWrap = false)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E293B),
-                            labelColor = Color(0xFFFF5252)
-                        ),
-                        border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.4f))
-                    )
-
-                    AssistChip(
-                        onClick = {
-                            capturedWebView?.loadUrl("http://neverssl.com")
-                        },
-                        label = {
-                            Text("🌐 كشف بوابة الشبكة", fontSize = 11.sp, maxLines = 1, softWrap = false)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E293B),
-                            labelColor = Color(0xFFFFB300)
-                        ),
-                        border = BorderStroke(1.dp, Color(0xFFFFB300).copy(alpha = 0.4f))
-                    )
-                }
+                    },
+                    label = {
+                        Text("⚡ دخول تلقائي وقراءة الرصيد", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Color(0xFF00E676).copy(alpha = 0.22f),
+                        labelColor = Color(0xFF00E676)
+                    ),
+                    border = BorderStroke(1.2.dp, Color(0xFF00E676))
+                )
             }
         }
 
-        if (showForensicDrawer) {
-            DeepForensicInspectorPanel(
+        if (showForensicSheet) {
+            PatternGuidedForensicSheet(
                 candidates = forensicCandidates,
                 partialMasks = forensicPartials,
                 isScanning = isForensicScanning,
-                onRescan = { runForensicOnCapturedWebView() },
-                onClose = { showForensicDrawer = false }
+                selectedLength = selectedLength,
+                onSelectLength = { selectedLength = it },
+                prefixFilter = prefixFilter,
+                onPrefixChange = { prefixFilter = it },
+                suffixFilter = suffixFilter,
+                onSuffixChange = { suffixFilter = it },
+                onTriggerScan = { runHybridScan() },
+                onSaveToWallet = { code ->
+                    KrotyAutoPilotHub.persistSession(context, code, KrotyAutoPilotHub.liveBalanceText, KrotyAutoPilotHub.liveTimeText)
+                },
+                onClose = { showForensicSheet = false }
             )
         }
 
@@ -1491,17 +2205,26 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
                             try {
                                 view.settings.domStorageEnabled = true
                                 view.addJavascriptInterface(
-                                    ForensicJsBridge { jsonStr ->
-                                        val (p, c) = parseForensicResults(
-                                            ctx,
-                                            view.url ?: currentUrlDisplay,
-                                            jsonStr
-                                        )
-                                        forensicPartials = p
-                                        forensicCandidates = c
-                                        isForensicScanning = false
-                                    },
-                                    "KrotyForensicBridge"
+                                    KrotyNativeJsBridge(
+                                        onDomBundleReceived = { jsonStr ->
+                                            latestDomBundleJson = jsonStr
+                                            try {
+                                                val root = org.json.JSONObject(jsonStr)
+                                                val (u, bal, tm) = extractLiveBalanceFromTextAndHtml(
+                                                    root.optString("text", ""),
+                                                    root.optString("html", "")
+                                                )
+                                                if (u.isNotBlank() || bal.isNotBlank() || tm.isNotBlank()) {
+                                                    KrotyAutoPilotHub.persistSession(ctx, u, bal, tm)
+                                                }
+                                            } catch (_: Exception) {}
+                                            isForensicScanning = false
+                                        },
+                                        onAutoLoginTriggered = { submittedCode ->
+                                            KrotyAutoPilotHub.persistSession(ctx, submittedCode, "", "")
+                                        }
+                                    ),
+                                    "KrotyNativeBridge"
                                 )
                                 bridgeAttached = true
                             } catch (_: Exception) {}
@@ -1518,6 +2241,11 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
                     if (!view.url.isNullOrBlank()) {
                         currentUrlDisplay = view.url ?: currentUrlDisplay
                     }
+                    val pendingCode = KrotyAutoPilotHub.pendingAutoLoginVoucher
+                    if (!pendingCode.isNullOrBlank()) {
+                        view.evaluateJavascript(buildAutoPilotLoginJs(pendingCode), null)
+                    }
+                    view.evaluateJavascript(buildSafeDomCollectorJs(), null)
                 }
                 update(view)
             }

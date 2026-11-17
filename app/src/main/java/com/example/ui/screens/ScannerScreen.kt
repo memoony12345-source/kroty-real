@@ -115,7 +115,7 @@ fun ScannerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("الماسح الذكي (فلاش + معرض)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("الماسح الذكي (فلاش + معرض + دخول آلي)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Row {
                         IconButton(onClick = {
                             torchEnabled = !torchEnabled
