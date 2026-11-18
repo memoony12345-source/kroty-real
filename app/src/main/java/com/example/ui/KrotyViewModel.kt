@@ -15,6 +15,7 @@ import com.example.domain.network.PortalDiscovery
 import com.example.domain.network.WifiRadarEngine
 import com.example.domain.wallet.BackupRestoreManager
 import com.example.domain.web.BalanceAndErrorParser
+import com.example.service.PortalEvents
 import com.example.widget.KrotySmartWidgetProvider
 import com.example.worker.KrotyNotificationHelper
 import kotlinx.coroutines.flow.*
@@ -75,9 +76,18 @@ class KrotyViewModel(
                 }
             }
         }
+        // v3.6: the system's own "sign in to network" notification is our fastest trigger.
+        viewModelScope.launch {
+            PortalEvents.signInRequests.collect { event ->
+                if (event.atMillis > 0L) {
+                    PortalDiscovery.forget(appContext, wifiState.value.ssid)
+                    refreshEverything(forcePortal = true)
+                }
+            }
+        }
     }
 
-    fun refreshEverything() {
+    fun refreshEverything(forcePortal: Boolean = false) {
         viewModelScope.launch {
             _portalSession.update { it.copy(isProbing = true, statusMessage = "جاري فحص الشبكة والبوابة الحقيقية...") }
             val liveWifi = wifiRadar.refreshNow()
@@ -100,9 +110,10 @@ class KrotyViewModel(
                 context = appContext,
                 wifiNet = wifiRadar.getActiveWifiNetwork(),
                 gatewayIp = liveWifi.gatewayIp,
-                ssid = liveWifi.ssid
+                ssid = liveWifi.ssid,
+                force = forcePortal
             )
-            var probeResult = portalProber.probeCurrentNetwork(endpoint?.baseUrl)
+            var probeResult = portalProber.probeCurrentNetwork(endpoint?.baseUrl, endpoint?.loginUrl)
             if (probeResult.liveStatus == null && endpoint != null) {
                 // Cached portal may be stale: re-discover once and retry the status page.
                 val fresh = PortalDiscovery.discover(
@@ -114,7 +125,7 @@ class KrotyViewModel(
                 )
                 if (fresh != null && fresh.baseUrl != endpoint.baseUrl) {
                     endpoint = fresh
-                    probeResult = portalProber.probeCurrentNetwork(fresh.baseUrl)
+                    probeResult = portalProber.probeCurrentNetwork(fresh.baseUrl, fresh.loginUrl)
                 }
             }
             val portalHost = PortalDiscovery.hostOf(probeResult.portalBaseUrl).ifBlank { liveWifi.gatewayIp }
@@ -147,12 +158,20 @@ class KrotyViewModel(
                     )
                 }
             } else {
+                val msg = when {
+                    endpoint == null && PortalDiscovery.androidSeesPortal(appContext) ->
+                        "أندرويد يرى بوابة على هذه الشبكة لكنها لم تستجب بعد — أعد المحاولة أو افتح البوابة يدوياً"
+                    endpoint == null ->
+                        "لم أجد بوابة تسجيل دخول على هذه الشبكة (قد تكون مفتوحة أو البوابة لا ترد على HTTP)"
+                    else ->
+                        "تم اكتشاف بوابة الشبكة الحقيقية ($portalHost) — جاهز لتسجيل الدخول أو قراءة الرصيد"
+                }
                 _portalSession.update {
                     it.copy(
                         currentNetwork = dynamicNet,
                         isProbing = false,
                         isInternetReachable = probeResult.isInternetActive,
-                        statusMessage = "تم اكتشاف بوابة الشبكة الحقيقية ($portalHost) — جاهز لتسجيل الدخول أو قراءة الرصيد"
+                        statusMessage = msg
                     )
                 }
             }

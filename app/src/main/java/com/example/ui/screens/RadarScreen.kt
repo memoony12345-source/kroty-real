@@ -146,8 +146,13 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
     val portalBase = PortalDiscovery.cachedBaseFor(context, wifi.ssid)
         .ifBlank { if (dynamicGateway.isNotBlank()) "http://$dynamicGateway" else "" }
     val portalHost = PortalDiscovery.hostOf(portalBase).ifBlank { dynamicGateway }
-    val dynamicLoginUrl = if (portalBase.isNotBlank()) "$portalBase/login"
-        else session.currentNetwork?.loginUrl.orEmpty()
+    // Exact page Android itself would open (captured from the captive-portal redirect).
+    val capturedLoginUrl = PortalDiscovery.cachedLoginFor(context, wifi.ssid)
+    val dynamicLoginUrl = when {
+        capturedLoginUrl.startsWith("http") -> capturedLoginUrl
+        portalBase.isNotBlank() -> "$portalBase/login"
+        else -> session.currentNetwork?.loginUrl.orEmpty()
+    }
     val dynamicStatusUrl = if (portalBase.isNotBlank()) "$portalBase/status"
         else session.currentNetwork?.statusUrl.orEmpty()
 
@@ -368,7 +373,11 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
 
                 Button(
                     onClick = {
-                        initialPortalUrl = if (dynamicStatusUrl.isNotBlank()) dynamicStatusUrl else "http://neverssl.com"
+                        initialPortalUrl = when {
+                            capturedLoginUrl.startsWith("http") -> capturedLoginUrl
+                            dynamicStatusUrl.isNotBlank() -> dynamicStatusUrl
+                            else -> "http://neverssl.com"
+                        }
                         showPortalDialog = true
                     },
                     modifier = Modifier.fillMaxWidth(),

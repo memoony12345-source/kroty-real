@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.KrotyViewModel
+import com.example.service.PortalNotificationListener
 import com.example.worker.SmartBalanceWorker
 import kotlinx.coroutines.launch
 
@@ -88,6 +90,45 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                     Icon(Icons.Default.Sync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("تشغيل فحص الرصيد الخلفي وتحديث الودجت الآن")
+                }
+            }
+        }
+
+        // Portal detection via the system sign-in notification (v3.6)
+        val notifAccessEnabled = remember { PortalNotificationListener.isEnabled(context) }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("اكتشاف البوابة من إشعار النظام", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    if (notifAccessEnabled)
+                        "مفعّل ✅ كروتي يقرأ إشعار «تسجيل الدخول إلى شبكة Wi-Fi» ويبدأ فحص البوابة فوراً."
+                    else
+                        "غير مفعّل — فعّل «الوصول إلى الإشعارات» لكروتي ليكتشف البوابة لحظة ظهور إشعار الشبكة.",
+                    fontSize = 12.sp,
+                    color = if (notifAccessEnabled) Color(0xFF34D399) else Color(0xFFFBBF24)
+                )
+                Button(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.NotificationsActive, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (notifAccessEnabled) "إدارة إذن الإشعارات" else "تفعيل الوصول إلى الإشعارات")
+                }
+                OutlinedButton(
+                    onClick = { viewModel.refreshEverything(forcePortal = true) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("إعادة اكتشاف بوابة الشبكة الآن")
                 }
             }
         }
