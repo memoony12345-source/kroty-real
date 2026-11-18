@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 
 data class PortalProbeResult(
     val gatewayIp: String,
+    val portalBaseUrl: String,
     val discoveredLoginUrl: String,
     val statusUrl: String,
     val logoutUrl: String,
@@ -34,7 +35,7 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
         return builder.build()
     }
 
-    suspend fun probeCurrentNetwork(): PortalProbeResult = withContext(Dispatchers.IO) {
+    suspend fun probeCurrentNetwork(overrideBaseUrl: String? = null): PortalProbeResult = withContext(Dispatchers.IO) {
         val wifiState = radarEngine.refreshNow()
         val wifiNet = radarEngine.getActiveWifiNetwork()
         val gatewayIp = wifiState.gatewayIp
@@ -70,20 +71,29 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
             }
         } catch (_: Exception) {}
 
+        val overrideBase = overrideBaseUrl?.trim()?.removeSuffix("/").orEmpty()
         val baseHost = try {
-            if (discoveredLoginUrl.startsWith("http")) {
+            if (overrideBase.startsWith("http")) {
+                overrideBase
+            } else if (discoveredLoginUrl.startsWith("http")) {
                 val u = java.net.URI(discoveredLoginUrl)
                 "${u.scheme}://${u.authority}"
             } else if (gatewayIp.isNotBlank()) {
                 "http://$gatewayIp"
             } else ""
         } catch (_: Exception) {
-            if (gatewayIp.isNotBlank()) "http://$gatewayIp" else ""
+            if (overrideBase.startsWith("http")) overrideBase
+            else if (gatewayIp.isNotBlank()) "http://$gatewayIp" else ""
         }
 
         val statusUrl = if (baseHost.isNotBlank()) "$baseHost/status" else ""
         val logoutUrl = if (baseHost.isNotBlank()) "$baseHost/logout" else ""
-        val finalLoginUrl = if (discoveredLoginUrl.isNotBlank()) discoveredLoginUrl else if (baseHost.isNotBlank()) "$baseHost/login" else ""
+        val finalLoginUrl = when {
+            overrideBase.isNotBlank() && baseHost.isNotBlank() -> "$baseHost/login"
+            discoveredLoginUrl.isNotBlank() -> discoveredLoginUrl
+            baseHost.isNotBlank() -> "$baseHost/login"
+            else -> ""
+        }
 
         // 2. Fetch live /status page from the current MikroTik gateway to read active voucher & balance!
         var liveStatus: ParsedMikroTikStatus? = null
@@ -113,6 +123,7 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
 
         PortalProbeResult(
             gatewayIp = gatewayIp,
+            portalBaseUrl = baseHost,
             discoveredLoginUrl = finalLoginUrl,
             statusUrl = statusUrl,
             logoutUrl = logoutUrl,

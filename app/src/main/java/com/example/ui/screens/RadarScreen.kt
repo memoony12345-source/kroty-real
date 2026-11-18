@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.domain.network.PortalDiscovery
 import com.example.domain.web.MikroTikJsScripts
 import com.example.ui.KrotyViewModel
 import kotlinx.coroutines.launch
@@ -141,10 +142,14 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
     var initialPortalUrl by remember { mutableStateOf("") }
 
     val dynamicGateway = wifi.gatewayIp.ifBlank { session.currentNetwork?.gatewayIp.orEmpty() }
-    val dynamicLoginUrl = session.currentNetwork?.loginUrl?.takeIf { it.isNotBlank() }
-        ?: if (dynamicGateway.isNotBlank()) "http://$dynamicGateway/login" else ""
-    val dynamicStatusUrl = session.currentNetwork?.statusUrl?.takeIf { it.isNotBlank() }
-        ?: if (dynamicGateway.isNotBlank()) "http://$dynamicGateway/status" else ""
+    // Real hotspot portal (may differ from the Android gateway, e.g. 3.3.3.3)
+    val portalBase = PortalDiscovery.cachedBaseFor(context, wifi.ssid)
+        .ifBlank { if (dynamicGateway.isNotBlank()) "http://$dynamicGateway" else "" }
+    val portalHost = PortalDiscovery.hostOf(portalBase).ifBlank { dynamicGateway }
+    val dynamicLoginUrl = if (portalBase.isNotBlank()) "$portalBase/login"
+        else session.currentNetwork?.loginUrl.orEmpty()
+    val dynamicStatusUrl = if (portalBase.isNotBlank()) "$portalBase/status"
+        else session.currentNetwork?.statusUrl.orEmpty()
 
     LaunchedEffect(session.openWebPortalAutomatically, session.pendingAutoLoginCode) {
         if (session.openWebPortalAutomatically && !session.pendingAutoLoginCode.isNullOrBlank()) {
@@ -208,7 +213,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = if (dynamicGateway.isNotBlank()) "بوابة الشبكة المكتشفة: $dynamicGateway • BSSID: ${wifi.bssid}"
+                    text = if (portalHost.isNotBlank()) "بوابة الشبكة المكتشفة: $portalHost • BSSID: ${wifi.bssid}"
                     else "يرجى الاتصال بشبكة Wi-Fi لاكتشاف البوابة تلقائياً",
                     fontSize = 13.sp,
                     color = Color(0xFF94A3B8)
@@ -371,7 +376,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                 ) {
                     Icon(Icons.Default.Language, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("فتح متصفح بوابة الشبكة (${dynamicGateway.ifBlank { "تلقائي" }})")
+                    Text("فتح متصفح بوابة الشبكة (${portalHost.ifBlank { "تلقائي" }})")
                 }
 
                 OutlinedButton(
@@ -393,7 +398,8 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("روابط البوابة المكتشفة ديناميكياً للشبكة الحالية", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text("عنوان البوابة (Gateway): ${dynamicGateway.ifBlank { "بانتظار الواي فاي" }}", fontSize = 13.sp)
+                Text("بوابة الشبكة الحقيقية (Portal): ${portalHost.ifBlank { "بانتظار الواي فاي" }}", fontSize = 13.sp)
+                Text("عنوان البوابة (Gateway): ${dynamicGateway.ifBlank { "---" }}", fontSize = 12.sp, color = Color.Gray)
                 Text("رابط الدخول: ${dynamicLoginUrl.ifBlank { "---" }}", fontSize = 13.sp, color = Color(0xFF38BDF8))
                 Text("رابط الرصيد: ${dynamicStatusUrl.ifBlank { "---" }}", fontSize = 13.sp, color = Color(0xFF10B981))
                 Text(
@@ -408,9 +414,9 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
     if (showPortalDialog) {
         RealPortalWebViewDialog(
             viewModel = viewModel,
-            gatewayIp = dynamicGateway,
+            gatewayIp = portalHost,
             startUrl = initialPortalUrl.ifBlank {
-                if (dynamicGateway.isNotBlank()) "http://$dynamicGateway/login" else "http://neverssl.com"
+                if (portalBase.isNotBlank()) "$portalBase/login" else "http://neverssl.com"
             },
             autoInjectCode = session.pendingAutoLoginCode,
             learnedSelector = session.currentNetwork?.learnedInputSelector,
@@ -804,6 +810,12 @@ private fun bindProcessToActiveWifi(context: android.content.Context): android.n
 }
 
 private fun detectActiveGatewayUrl(context: android.content.Context): String {
+    try {
+        val wm0 = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        val currentSsid = PortalDiscovery.normalizeSsid(wm0.connectionInfo?.ssid)
+        val cachedPortal = PortalDiscovery.cachedBaseFor(context, currentSsid)
+        if (cachedPortal.isNotBlank()) return cachedPortal
+    } catch (_: Exception) {}
     try {
         val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         for (net in cm.allNetworks) {

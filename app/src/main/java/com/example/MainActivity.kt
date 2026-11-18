@@ -75,7 +75,7 @@ class MainActivity : FragmentActivity() {
                         topBar = {
                             TopAppBar(
                                 title = {
-                                    Text("كروتي نت • Kroty Pro v3.4", fontWeight = FontWeight.Bold)
+                                    Text("كروتي نت • Kroty Pro v3.5", fontWeight = FontWeight.Bold)
                                 }
                             )
                         },

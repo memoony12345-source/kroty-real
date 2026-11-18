@@ -11,6 +11,7 @@ import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.KrotyRepository
 import com.example.domain.network.CaptivePortalProber
 import com.example.domain.network.LiveWifiState
+import com.example.domain.network.PortalDiscovery
 import com.example.domain.network.WifiRadarEngine
 import com.example.domain.wallet.BackupRestoreManager
 import com.example.domain.web.BalanceAndErrorParser
@@ -62,6 +63,18 @@ class KrotyViewModel(
 
     init {
         refreshEverything()
+        // Re-discover the real portal whenever the Wi-Fi network changes.
+        viewModelScope.launch {
+            var lastKey = ""
+            wifiState.collect { st ->
+                val key = "${st.ssid}|${st.gatewayIp}|${st.isConnectedToWifi}"
+                if (key != lastKey) {
+                    val first = lastKey.isBlank()
+                    lastKey = key
+                    if (!first && st.isConnectedToWifi) refreshEverything()
+                }
+            }
+        }
     }
 
     fun refreshEverything() {
@@ -82,7 +95,30 @@ class KrotyViewModel(
             repository.recordAccessPoint(liveWifi.bssid, liveWifi.ssid, liveWifi.rssiDbm)
             wifiRadar.runDualPing()
 
-            val probeResult = portalProber.probeCurrentNetwork()
+            // Discover the REAL hotspot portal (often not the Android gateway, e.g. 3.3.3.3)
+            var endpoint = PortalDiscovery.discover(
+                context = appContext,
+                wifiNet = wifiRadar.getActiveWifiNetwork(),
+                gatewayIp = liveWifi.gatewayIp,
+                ssid = liveWifi.ssid
+            )
+            var probeResult = portalProber.probeCurrentNetwork(endpoint?.baseUrl)
+            if (probeResult.liveStatus == null && endpoint != null) {
+                // Cached portal may be stale: re-discover once and retry the status page.
+                val fresh = PortalDiscovery.discover(
+                    context = appContext,
+                    wifiNet = wifiRadar.getActiveWifiNetwork(),
+                    gatewayIp = liveWifi.gatewayIp,
+                    ssid = liveWifi.ssid,
+                    force = true
+                )
+                if (fresh != null && fresh.baseUrl != endpoint.baseUrl) {
+                    endpoint = fresh
+                    probeResult = portalProber.probeCurrentNetwork(fresh.baseUrl)
+                }
+            }
+            val portalHost = PortalDiscovery.hostOf(probeResult.portalBaseUrl).ifBlank { liveWifi.gatewayIp }
+
             val dynamicNet = repository.getOrUpdateDynamicNetwork(
                 rawSsid = liveWifi.ssid,
                 gatewayIp = liveWifi.gatewayIp,
@@ -98,7 +134,7 @@ class KrotyViewModel(
                     networkSsid = liveWifi.ssid
                 )
                 val msg = buildString {
-                    append("متصل بالبوابة (${liveWifi.gatewayIp})")
+                    append("متصل بالبوابة ($portalHost)")
                     liveStatus.activeUsername?.let { append(" • الكرت: $it") }
                     liveStatus.remainingMegabytes?.let { append(" • المتبقي: ${String.format("%.1f", it)} MB") }
                 }
@@ -116,7 +152,7 @@ class KrotyViewModel(
                         currentNetwork = dynamicNet,
                         isProbing = false,
                         isInternetReachable = probeResult.isInternetActive,
-                        statusMessage = "تم اكتشاف البوابة (${liveWifi.gatewayIp}) — جاهز لتسجيل الدخول أو قراءة الرصيد"
+                        statusMessage = "تم اكتشاف بوابة الشبكة الحقيقية ($portalHost) — جاهز لتسجيل الدخول أو قراءة الرصيد"
                     )
                 }
             }
