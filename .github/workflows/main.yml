@@ -28,7 +28,18 @@ jobs:
           fi
 
           python3 - << 'EOF'
-          import re, os
+          import re, os, sys
+
+          # Guard: the v3.4 engine is already committed in the sources. Re-applying the
+          # patch would wrap RadarScreen twice and append a duplicate appendix, which
+          # breaks compilation. Skip the whole patch step when it is already present.
+          _radar_probe = "app/src/main/java/com/example/ui/screens/RadarScreen.kt"
+          if os.path.exists(_radar_probe):
+              with open(_radar_probe, "r", encoding="utf-8") as _f:
+                  _probe_code = _f.read()
+              if "object KrotyAutoPilotHub" in _probe_code:
+                  print("Kroty v3.4 engine already present - skipping patch step")
+                  sys.exit(0)
 
           # 1. Cleanly extract all original working files using rfind('"""')
           for script_name in ['/tmp/orig_part1.py', '/tmp/orig_part2.py', '/tmp/orig_part3.py']:
@@ -178,6 +189,7 @@ jobs:
                   "import androidx.compose.foundation.verticalScroll",
                   "import androidx.compose.foundation.rememberScrollState",
                   "import androidx.compose.ui.draw.clip",
+                  "import kotlinx.coroutines.launch",
               ])
 
               r_code = r_code.replace('"يتعلم..."', '"🎯 يتعلم"')

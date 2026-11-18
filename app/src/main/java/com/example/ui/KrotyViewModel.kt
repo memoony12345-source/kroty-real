@@ -162,6 +162,28 @@ class KrotyViewModel(
         }
     }
 
+    /**
+     * Saves a voucher recovered from the gateway session (auto-pilot / forensic engine)
+     * into the wallet and optionally logs in with it right away.
+     * Used by RadarScreen's "استخراج الكرت الضائع" flow.
+     */
+    fun addManualVoucher(
+        code: String,
+        note: String = "",
+        password: String = "",
+        connectImmediately: Boolean = true
+    ) {
+        val clean = code.trim()
+        if (clean.isEmpty()) return
+        saveAndConnectVoucher(
+            code = clean,
+            password = password,
+            price = null,
+            quotaMb = null,
+            connectImmediately = connectImmediately
+        )
+    }
+
     fun clearPendingAutoLogin() {
         _portalSession.update { it.copy(pendingAutoLoginCode = null, openWebPortalAutomatically = false) }
     }

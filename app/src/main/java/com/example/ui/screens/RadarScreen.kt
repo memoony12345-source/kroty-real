@@ -32,6 +32,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.domain.web.MikroTikJsScripts
 import com.example.ui.KrotyViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun RadarScreen(viewModel: KrotyViewModel,
