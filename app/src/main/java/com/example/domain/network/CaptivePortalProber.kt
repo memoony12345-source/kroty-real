@@ -69,6 +69,7 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
             "http://detectportal.firefox.com/success.txt"
         )
         for (url in probes) {
+            var done = false
             try {
                 val req = Request.Builder()
                     .url(url)
@@ -79,7 +80,7 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
                     when (resp.code) {
                         204 -> {
                             isInternetActive = true
-                            break
+                            done = true
                         }
                         in 300..399 -> {
                             val loc = resp.header("Location").orEmpty()
@@ -96,18 +97,19 @@ class CaptivePortalProber(private val radarEngine: WifiRadarEngine) {
                                     loginUrl = abs
                                 }
                             }
-                            break
+                            done = true
                         }
                         200 -> {
                             val body = resp.body?.string().orEmpty()
                             val meta = Regex("""url\s*=\s*['"]?(http[^'">\s]+)""", RegexOption.IGNORE_CASE)
                                 .find(body)?.groupValues?.getOrNull(1)
                             if (!meta.isNullOrBlank()) loginUrl = meta
-                            break
+                            done = true
                         }
                     }
                 }
             } catch (_: Exception) {}
+            if (done) break
         }
 
         val overrideBase = overrideBaseUrl?.trim()?.removeSuffix("/").orEmpty()
