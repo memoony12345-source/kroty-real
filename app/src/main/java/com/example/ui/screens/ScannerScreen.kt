@@ -165,7 +165,7 @@ fun ScannerScreen(
                                         }
                                         val analyzer = KrotyCameraAnalyzer(
                                             getExpectedLength = { selectedLengthLock },
-                                            isNumericOnly = { true },
+                                            isNumericOnly = { false },
                                             onLiveCandidate = { candidate, prog, confirmed ->
                                                 liveDetectedCode = candidate.code
                                                 confidence = prog
@@ -263,7 +263,7 @@ fun ScannerScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val lengths = listOf(null to "الكل", 6 to "6 أرقام", 8 to "8 أرقام", 10 to "10 أرقام", 12 to "12 رقم")
+                    val lengths = listOf(null to "الكل", 6 to "6 خانات", 8 to "8 خانات", 10 to "10 خانات", 12 to "12 خانة")
                     for ((len, label) in lengths) {
                         FilterChip(
                             selected = selectedLengthLock == len,

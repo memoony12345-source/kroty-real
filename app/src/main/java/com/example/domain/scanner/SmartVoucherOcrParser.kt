@@ -19,6 +19,11 @@ object SmartVoucherOcrParser {
         "رمز", "كود", "كرت", "بطاقة", "الكرت", "user", "username", "voucher", "pin", "code", "card"
     )
     private val phonePrefixes = listOf("77", "78", "71", "73", "70", "05", "967", "966")
+    private val commonWords = listOf(
+        "hotspot", "login", "logout", "internet", "wifi", "wi-fi", "welcome",
+        "user", "username", "password", "voucher", "code", "card", "price",
+        "http", "https", "www", "connect", "status", "support", "fast", "real"
+    )
 
     fun normalizeOpticalDigits(raw: String, isNumericOnly: Boolean): String {
         val cleaned = raw.trim().replace(" ", "").replace("-", "")
@@ -41,7 +46,7 @@ object SmartVoucherOcrParser {
     fun parseMlKitText(
         visionText: Text,
         expectedLength: Int? = null,
-        isNumericOnly: Boolean = true
+        isNumericOnly: Boolean = false
     ): ScannedVoucherCandidate? {
         val fullText = visionText.text
         if (fullText.isBlank()) return null
@@ -70,11 +75,23 @@ object SmartVoucherOcrParser {
             val tokens = Regex("""[A-Za-z0-9IlOQSZB|]{4,20}""").findAll(lineText).map { it.value }
             for (token in tokens) {
                 val normalized = normalizeOpticalDigits(token, isNumericOnly)
-                if (isNumericOnly && !normalized.all { it.isDigit() }) continue
                 if (normalized.length !in 4..20) continue
 
+                val hasLetter = normalized.any { it.isLetter() }
+                val hasDigit = normalized.any { it.isDigit() }
+
+                // Numeric mode: digits only (after optical digit repair).
+                // Mixed mode: the code must contain at least one digit, otherwise
+                // we'd pick words printed on the card ("hotspot", "welcome").
+                if (isNumericOnly) {
+                    if (!normalized.all { it.isDigit() }) continue
+                } else {
+                    if (!hasDigit) continue
+                    if (commonWords.any { normalized.equals(it, ignoreCase = true) }) continue
+                }
+
                 // Skip phone numbers unless explicitly matching expected length + positive keyword
-                if ((normalized.length == 9 || normalized.length == 10) &&
+                if (normalized.length in 9..10 &&
                     phonePrefixes.any { normalized.startsWith(it) } &&
                     !hasPositiveKeyword &&
                     expectedLength != normalized.length
@@ -91,6 +108,12 @@ object SmartVoucherOcrParser {
                 if (expectedLength != null && normalized.length == expectedLength) score += 80
                 if (hasPositiveKeyword) score += 50
                 if (normalized.length in 6..14) score += 20
+                if (!isNumericOnly) {
+                    // An alphanumeric voucher code (letters + digits) is the real target.
+                    if (hasLetter && hasDigit) score += 60
+                    // Short digit-only tokens are usually the price / serial, not the code.
+                    if (!hasLetter && normalized.length <= 5) score -= 45
+                }
 
                 candidates.add(
                     ScannedVoucherCandidate(

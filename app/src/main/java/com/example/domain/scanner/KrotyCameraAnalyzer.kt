@@ -80,7 +80,7 @@ class KrotyCameraAnalyzer(
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 recognizer.process(image)
                     .addOnSuccessListener { text ->
-                        val parsed = SmartVoucherOcrParser.parseMlKitText(text, expectedLength, true)
+                        val parsed = SmartVoucherOcrParser.parseMlKitText(text, expectedLength, false)
                         onResult(parsed)
                     }
                     .addOnFailureListener {
