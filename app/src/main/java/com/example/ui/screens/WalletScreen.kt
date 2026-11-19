@@ -37,6 +37,7 @@ import com.example.ui.theme.AuroraCyan
 import com.example.ui.theme.AuroraEmerald
 import com.example.ui.theme.AuroraRose
 import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.MetalButton
 import com.example.ui.theme.AuroraViolet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,7 +70,7 @@ fun WalletScreen(
             Spacer(Modifier.height(12.dp))
             Text("المحفظة محمية بالبصمة الحيوية", fontWeight = FontWeight.Bold, fontSize = 19.sp)
             Spacer(Modifier.height(16.dp))
-            Button(onClick = {
+            MetalButton(onClick = {
                 val activity = context as? FragmentActivity
                 if (activity != null) {
                     val executor = ContextCompat.getMainExecutor(context)
@@ -223,7 +224,7 @@ fun WalletScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Button(
+                                MetalButton(
                                     onClick = {
                                         viewModel.activateExistingVoucher(voucher)
                                         onConnectNavigateToRadar()

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +32,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -329,6 +337,131 @@ fun KrotyGlassNavBar(
                     color = if (selected) Color.White else InkMuted
                 )
             }
+        }
+    }
+}
+
+// ---- Brushed metal buttons --------------------------------------------------
+
+/** Brushed-steel fill used by every action button. */
+val MetalBrush: Brush = Brush.verticalGradient(
+    colors = listOf(MetalTop, MetalMid, MetalBase)
+)
+
+/** Paints a brushed-metal plate in [shape], with a light-catching top rim. */
+fun Modifier.metalFill(shape: Shape, enabled: Boolean = true): Modifier {
+    val a = if (enabled) 1f else 0.38f
+    return this
+        .clip(shape)
+        .background(
+            Brush.verticalGradient(
+                listOf(
+                    MetalTop.copy(alpha = a),
+                    MetalMid.copy(alpha = a),
+                    MetalBase.copy(alpha = a)
+                )
+            )
+        )
+        .border(1.dp, MetalTop.copy(alpha = a * 0.6f), shape)
+}
+
+/**
+ * Material's Button, repainted in brushed metal. Keeps every existing call site
+ * working: any custom [colors] is accepted but only its content colour is used.
+ */
+@Composable
+fun MetalButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(18.dp),
+    colors: ButtonColors = ButtonDefaults.buttonColors(),
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    val ink = if (enabled) MetalInk else MetalInk.copy(alpha = 0.45f)
+    Button(
+        onClick = onClick,
+        modifier = modifier.metalFill(shape, enabled),
+        enabled = enabled,
+        shape = shape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            contentColor = ink,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = ink
+        ),
+        contentPadding = contentPadding,
+        content = content
+    )
+}
+
+/**
+ * The animated network badge: slow radar rings radiate out of the Wi-Fi glyph
+ * while the signal is live.
+ */
+@Composable
+fun PulsingWifiBadge(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    badgeSize: Dp = 78.dp
+) {
+    val transition = rememberInfiniteTransition(label = "wifi-badge")
+    val ring by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "ring"
+    )
+    val breathe by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathe"
+    )
+
+    Box(modifier = modifier.size(badgeSize), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            if (active) {
+                val maxR = size.minDimension / 2f
+                for (i in 0 until 3) {
+                    val phase = (ring + i / 3f) % 1f
+                    drawCircle(
+                        color = AuroraCyan.copy(alpha = (1f - phase) * 0.42f),
+                        radius = maxR * (0.30f + 0.70f * phase),
+                        style = Stroke(width = 1.6.dp.toPx())
+                    )
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(badgeSize * 0.66f)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            (if (active) AuroraCyan else Color.White).copy(
+                                alpha = 0.20f + 0.18f * breathe
+                            ),
+                            Color.Transparent
+                        )
+                    ),
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Wifi,
+                contentDescription = null,
+                tint = if (active) AuroraCyan else InkMuted,
+                modifier = Modifier.size(badgeSize * 0.42f)
+            )
         }
     }
 }

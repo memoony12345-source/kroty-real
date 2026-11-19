@@ -23,6 +23,7 @@ import com.example.ui.theme.AuroraCyan
 import com.example.ui.theme.AuroraEmerald
 import com.example.ui.theme.AuroraRose
 import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.MetalButton
 import com.example.service.PortalNotificationListener
 import com.example.worker.SmartBalanceWorker
 import kotlinx.coroutines.launch
@@ -85,7 +86,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                     FilterChip(selected = themeMode == "LIGHT", onClick = { viewModel.setThemeMode("LIGHT") }, label = { Text("فاتح لؤلؤي") })
                 }
 
-                Button(
+                MetalButton(
                     onClick = {
                         SmartBalanceWorker.runOnceNow(context)
                         feedbackBanner = "✅ تم تشغيل فحص الرصيد الخلفي وتحديث الودجت الآن"
@@ -116,7 +117,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                     fontSize = 12.sp,
                     color = if (notifAccessEnabled) AuroraEmerald else AuroraAmber
                 )
-                Button(
+                MetalButton(
                     onClick = {
                         context.startActivity(
                             Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
@@ -147,7 +148,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("النسخ الاحتياطي والاستعادة (JSON)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    MetalButton(
                         onClick = {
                             scope.launch {
                                 backupJsonDialogText = viewModel.exportBackupJson()

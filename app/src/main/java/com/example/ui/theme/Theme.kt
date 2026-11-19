@@ -2,6 +2,7 @@ package com.example.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -9,9 +10,26 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
+
+/**
+ * The app's Arabic face: a bold, geometric sans that reads like the iPhone's
+ * Arabic system font. Regular / Bold / ExtraBold cover every weight we use.
+ */
+val KrotyArabic = FontFamily(
+    Font(R.font.almarai_regular, FontWeight.Light),
+    Font(R.font.almarai_regular, FontWeight.Normal),
+    Font(R.font.almarai_bold, FontWeight.Medium),
+    Font(R.font.almarai_bold, FontWeight.SemiBold),
+    Font(R.font.almarai_bold, FontWeight.Bold),
+    Font(R.font.almarai_extrabold, FontWeight.ExtraBold),
+    Font(R.font.almarai_extrabold, FontWeight.Black)
+)
 
 private val GlassDark = darkColorScheme(
     primary = AuroraCyan,
@@ -113,24 +131,31 @@ private val KrotyShapes = Shapes(
 )
 
 private val KrotyTypography = Typography(
+    displayLarge = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp),
+    displayMedium = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.ExtraBold, fontSize = 33.sp),
+    displaySmall = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Bold, fontSize = 28.sp),
+    headlineLarge = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp),
+    headlineMedium = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Bold, fontSize = 24.sp),
     headlineSmall = TextStyle(
+        fontFamily = KrotyArabic,
         fontWeight = FontWeight.ExtraBold,
         fontSize = 24.sp,
         letterSpacing = (-0.4).sp
     ),
     titleLarge = TextStyle(
+        fontFamily = KrotyArabic,
         fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
         letterSpacing = (-0.2).sp
     ),
-    titleMedium = TextStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp),
-    titleSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 13.sp),
-    labelMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
-    labelSmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 10.sp)
+    titleMedium = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Bold, fontSize = 16.sp),
+    titleSmall = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
+    bodyLarge = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 17.sp),
+    labelLarge = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Bold, fontSize = 13.sp),
+    labelMedium = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+    labelSmall = TextStyle(fontFamily = KrotyArabic, fontWeight = FontWeight.Medium, fontSize = 10.sp)
 )
 
 @Composable
@@ -146,7 +171,14 @@ fun KrotyNetTheme(
     MaterialTheme(
         colorScheme = scheme,
         shapes = KrotyShapes,
-        typography = KrotyTypography,
-        content = content
-    )
+        typography = KrotyTypography
+    ) {
+        // Every Text in the app inherits the Arabic face, even when it only
+        // sets a font size (the common case in this codebase).
+        ProvideTextStyle(
+            value = TextStyle(fontFamily = KrotyArabic)
+        ) {
+            content()
+        }
+    }
 }

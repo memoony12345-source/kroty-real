@@ -45,6 +45,7 @@ import com.example.ui.theme.AuroraCyan
 import com.example.ui.theme.AuroraEmerald
 import com.example.ui.theme.AuroraRose
 import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.MetalButton
 import com.example.ui.theme.AuroraViolet
 import java.util.concurrent.Executors
 
@@ -251,7 +252,7 @@ fun ScannerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("يرجى منح صلاحية الكاميرا لتشغيل الماسح الحقيقي", color = Color.White, fontSize = 13.sp)
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { permLauncher.launch(Manifest.permission.CAMERA) }) {
+                            MetalButton(onClick = { permLauncher.launch(Manifest.permission.CAMERA) }) {
                                 Text("منح صلاحية الكاميرا الآن")
                             }
                         }
@@ -358,7 +359,7 @@ fun ScannerScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
+                    MetalButton(
                         onClick = {
                             if (codeInput.isNotBlank()) {
                                 viewModel.saveAndConnectVoucher(

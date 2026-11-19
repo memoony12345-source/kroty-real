@@ -37,6 +37,13 @@ val InkPrimary = Color(0xFFF5F8FF)
 val InkSecondary = Color(0xFFA9B7D8)
 val InkMuted = Color(0xFF7C89AB)
 
+// ---- Brushed metal (buttons) ------------------------------------------------
+val MetalTop = Color(0xFFF8FBFF)
+val MetalMid = Color(0xFFC8D3E3)
+val MetalBase = Color(0xFF93A2B9)
+val MetalEdge = Color(0xFF6C7B93)
+val MetalInk = Color(0xFF0B101C)
+
 // Backwards-compatible names still referenced by older screens.
 val NavyDarkBg = AuroraVoid
 val NavyCardBg = GlassSurface

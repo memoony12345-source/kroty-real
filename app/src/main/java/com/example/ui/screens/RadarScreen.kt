@@ -45,6 +45,8 @@ import com.example.ui.theme.AuroraViolet
 import com.example.ui.theme.GlassChip
 import com.example.ui.theme.InkMuted
 import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.MetalButton
+import com.example.ui.theme.PulsingWifiBadge
 import kotlinx.coroutines.launch
 
 @Composable
@@ -79,7 +81,7 @@ fun RadarScreen(viewModel: KrotyViewModel,
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Button(
+            MetalButton(
                 onClick = {
                     KrotyAutoPilotHub.openModernPortal(autoLoginCode = null, startInForensicMode = true)
                 },
@@ -101,7 +103,7 @@ fun RadarScreen(viewModel: KrotyViewModel,
                 )
             }
 
-            Button(
+            MetalButton(
                 onClick = {
                     KrotyAutoPilotHub.openModernPortal(autoLoginCode = null, startInForensicMode = false)
                 },
@@ -228,25 +230,12 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    if (wifi.isConnectedToWifi) AuroraCyan.copy(alpha = 0.34f)
-                                    else Color(0x1FFFFFFF),
-                                    Color.Transparent
-                                )
-                            ),
-                            CircleShape
-                        ),
+                    modifier = Modifier.size(96.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Wifi,
-                        contentDescription = null,
-                        tint = if (wifi.isConnectedToWifi) AuroraCyan else InkMuted,
-                        modifier = Modifier.size(40.dp)
+                    PulsingWifiBadge(
+                        active = wifi.isConnectedToWifi,
+                        badgeSize = 96.dp
                     )
                 }
                 Spacer(Modifier.height(10.dp))
@@ -388,7 +377,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
+                    MetalButton(
                         onClick = { viewModel.refreshEverything() },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -406,7 +395,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     }
                 }
 
-                Button(
+                MetalButton(
                     onClick = {
                         initialPortalUrl = when {
                             capturedLoginUrl.startsWith("http") -> capturedLoginUrl
@@ -811,7 +800,7 @@ fun LiveAutoPilotSessionBanner(
                         Text("نسخ", color = AuroraCyan, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     }
                 }
-                Button(
+                MetalButton(
                     onClick = onOpenPortal,
                     colors = ButtonDefaults.buttonColors(containerColor = AuroraEmerald, contentColor = Color.Black),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
@@ -1459,7 +1448,7 @@ fun PatternGuidedForensicSheet(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Button(
+                    MetalButton(
                         onClick = onTriggerScan,
                         colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = Color.Black),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1605,7 +1594,7 @@ fun PatternGuidedForensicSheet(
                                 fontSize = 21.sp
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Button(
+                                MetalButton(
                                     onClick = { copyVoucherToClipboard(context, bestCandidate.code) },
                                     colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = Color.Black),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1613,7 +1602,7 @@ fun PatternGuidedForensicSheet(
                                 ) {
                                     Text("📋 نسخ", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
-                                Button(
+                                MetalButton(
                                     onClick = {
                                         onSaveToWallet(bestCandidate.code)
                                         copyVoucherToClipboard(context, bestCandidate.code)
