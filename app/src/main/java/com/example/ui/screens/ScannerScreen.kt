@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Size
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,8 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -44,6 +47,7 @@ import com.example.ui.theme.AuroraAmber
 import com.example.ui.theme.AuroraCyan
 import com.example.ui.theme.AuroraEmerald
 import com.example.ui.theme.AuroraRose
+import com.example.ui.theme.GlassChip
 import com.example.ui.theme.InkSecondary
 import com.example.ui.theme.MetalButton
 import com.example.ui.theme.AuroraViolet
@@ -122,25 +126,34 @@ fun ScannerScreen(
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("الماسح الذكي (فلاش + معرض + دخول آلي)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Row {
-                        IconButton(onClick = {
+                    Text(
+                        "الماسح الذكي",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 17.sp
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = {
                             torchEnabled = !torchEnabled
                             cameraRef?.cameraControl?.enableTorch(torchEnabled)
-                        }) {
-                            Icon(
-                                imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                                contentDescription = "الفلاش",
-                                tint = if (torchEnabled) AuroraAmber else Color.White
-                            )
                         }
-                        IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = "صورة من المعرض", tint = AuroraCyan)
-                        }
+                    ) {
+                        Icon(
+                            imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                            contentDescription = "الفلاش",
+                            tint = if (torchEnabled) AuroraAmber else Color.White
+                        )
                     }
+                    IconButton(onClick = { galleryLauncher.launch("image/*") }) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "صورة من المعرض", tint = AuroraCyan)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    GlassChip(
+                        text = if (numericCardMode) "أرقام 6-12" else "أرقام وحروف",
+                        accent = if (numericCardMode) AuroraAmber else AuroraCyan
+                    )
                 }
 
                 // Live CameraX PreviewView Box
@@ -205,6 +218,16 @@ fun ScannerScreen(
                                         )
                                         val imageAnalysis = ImageAnalysis.Builder()
                                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                            .setResolutionSelector(
+                                                ResolutionSelector.Builder()
+                                                    .setResolutionStrategy(
+                                                        ResolutionStrategy(
+                                                            Size(1280, 960),
+                                                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                                                        )
+                                                    )
+                                                    .build()
+                                            )
                                             .build()
                                             .also { it.setAnalyzer(executor, analyzer) }
 

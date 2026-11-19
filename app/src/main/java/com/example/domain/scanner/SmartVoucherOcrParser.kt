@@ -27,6 +27,11 @@ object SmartVoucherOcrParser {
         "http", "https", "www", "connect", "status", "support", "fast", "real"
     )
 
+    /** A voucher code is 6..12 chars: anything shorter is price/serial noise. */
+    const val MIN_CODE_LENGTH = 6
+    const val MAX_NUMERIC_LENGTH = 12
+    const val MAX_ALNUM_LENGTH = 14
+
     /** Characters OCR mixes with digits on printed voucher cards. */
     private const val DIGIT_CONFUSABLES = "OoQDIl|!ZzSs\$GbB"
 
@@ -96,7 +101,7 @@ object SmartVoucherOcrParser {
             val withoutSeparators = run.replace(separatorRegex, "")
             if (withoutSeparators.isBlank()) continue
             val repaired = normalizeOpticalDigits(withoutSeparators, isNumericOnly = true)
-            if (repaired.length !in 4..20) continue
+            if (repaired.length !in MIN_CODE_LENGTH..MAX_NUMERIC_LENGTH) continue
             if (!repaired.all { it.isDigit() }) continue
             // A run that is mostly repaired letters is a word ("hotspot"), not a number.
             val plainDigitCount = withoutSeparators.count { it.isDigit() }
@@ -142,6 +147,7 @@ object SmartVoucherOcrParser {
             val numericRuns = if (quotaOrPriceLine) emptyList() else mergeNumericRuns(lineText)
             var addedNumeric = false
             for (mergedNumber in numericRuns) {
+                if (mergedNumber.length !in MIN_CODE_LENGTH..MAX_NUMERIC_LENGTH) continue
                 val lengthOk = expectedLength == null || expectedLength <= 0 || mergedNumber.length == expectedLength
                 if (!lengthOk) continue
                 val looksLikePhone = mergedNumber.length in 9..12 &&
@@ -152,16 +158,8 @@ object SmartVoucherOcrParser {
                 var score = 45 + fontScore
                 if (expectedLength != null && expectedLength > 0 && mergedNumber.length == expectedLength) score += 80
                 if (hasPositiveKeyword) score += 45
-                if (mergedNumber.length in 6..14) score += 25
+                if (mergedNumber.length in 6..12) score += 25
                 if (isBiggestLine) score += 35
-                // A short number is only a voucher when the whole line is that number.
-                if (mergedNumber.length <= 5) {
-                    val wholeLineIsNumber = lineText.replace(separatorRegex, "").let {
-                        val repaired = normalizeOpticalDigits(it, isNumericOnly = true)
-                        repaired == mergedNumber
-                    }
-                    score += if (wholeLineIsNumber) 0 else -35
-                }
                 candidates.add(
                     ScannedVoucherCandidate(
                         code = mergedNumber,
@@ -182,16 +180,17 @@ object SmartVoucherOcrParser {
             if (addedNumeric && numericRuns.any { it == wholeLineAsNumber }) continue
 
             // ---- Mixed alphanumeric reading (letters + digits) ------------------------
-            val tokens = Regex("""[A-Za-z0-9IlOQSZB|]{4,20}""").findAll(lineText).map { it.value }
+            val tokens = Regex("""[A-Za-z0-9IlOQSZB|]{6,16}""").findAll(lineText).map { it.value }
             for (token in tokens) {
+                // A token made only of digits (or of letters OCR mixes up with digits)
+                // is a numeric voucher; otherwise it must mix letters and digits.
+                val looksNumeric = token.all { it.isDigit() || DIGIT_CONFUSABLES.contains(it) }
                 val opticalRepair = normalizeOpticalDigits(token, isNumericOnly = true)
-                val tokenIsNumericAfterRepair = opticalRepair.length in 4..20 &&
-                    opticalRepair.all { it.isDigit() } &&
-                    token.all { it.isDigit() || DIGIT_CONFUSABLES.contains(it) }
-
-                val normalized = if (tokenIsNumericAfterRepair) opticalRepair
+                val normalized = if (looksNumeric) opticalRepair
                 else toLatinDigits(token.trim().replace(" ", "").replace("-", ""))
-                if (normalized.length !in 4..20) continue
+
+                val maxLen = if (looksNumeric) MAX_NUMERIC_LENGTH else MAX_ALNUM_LENGTH
+                if (normalized.length !in MIN_CODE_LENGTH..maxLen) continue
 
                 val hasLetter = normalized.any { it.isLetter() }
                 val hasDigit = normalized.any { it.isDigit() }
@@ -200,9 +199,8 @@ object SmartVoucherOcrParser {
                     if (!normalized.all { it.isDigit() }) continue
                 } else {
                     if (!hasDigit) continue
-                    if (!tokenIsNumericAfterRepair && commonWords.any { normalized.equals(it, ignoreCase = true) }) continue
+                    if (!looksNumeric && commonWords.any { normalized.equals(it, ignoreCase = true) }) continue
                 }
-
                 if (normalized.length in 9..10 &&
                     phonePrefixes.any { normalized.startsWith(it) } &&
                     !hasPositiveKeyword &&
@@ -218,11 +216,9 @@ object SmartVoucherOcrParser {
                 var score = 20 + fontScore
                 if (expectedLength != null && normalized.length == expectedLength) score += 80
                 if (hasPositiveKeyword) score += 50
-                if (normalized.length in 6..14) score += 20
+                if (normalized.length in 6..12) score += 20
                 if (!isNumericOnly) {
                     if (hasLetter && hasDigit) score += 60
-                    // Short digit-only fragments are price/serial noise, not a voucher.
-                    if (!hasLetter && normalized.length <= 5) score -= 45
                 }
 
                 candidates.add(
@@ -231,7 +227,7 @@ object SmartVoucherOcrParser {
                         detectedPrice = price,
                         detectedQuotaMb = quotaMb,
                         score = score,
-                        numericCard = tokenIsNumericAfterRepair
+                        numericCard = looksNumeric
                     )
                 )
             }
