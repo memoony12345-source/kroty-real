@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +18,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -27,6 +32,12 @@ import androidx.fragment.app.FragmentActivity
 import com.example.data.local.entity.VoucherEntity
 import com.example.domain.wallet.VoucherQrGenerator
 import com.example.ui.KrotyViewModel
+import com.example.ui.theme.AuroraAmber
+import com.example.ui.theme.AuroraCyan
+import com.example.ui.theme.AuroraEmerald
+import com.example.ui.theme.AuroraRose
+import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.AuroraViolet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -54,7 +65,7 @@ fun WalletScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(72.dp))
+            Icon(Icons.Default.Fingerprint, contentDescription = null, tint = AuroraCyan, modifier = Modifier.size(72.dp))
             Spacer(Modifier.height(12.dp))
             Text("المحفظة محمية بالبصمة الحيوية", fontWeight = FontWeight.Bold, fontSize = 19.sp)
             Spacer(Modifier.height(16.dp))
@@ -90,25 +101,66 @@ fun WalletScreen(
     val queuedCount = vouchers.count { it.status == "NEW_QUEUED" }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Analytics Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        // Analytics hero — gradient glass panel
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(22.dp, RoundedCornerShape(26.dp), spotColor = AuroraViolet)
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            AuroraViolet.copy(alpha = 0.42f),
+                            AuroraCyan.copy(alpha = 0.24f),
+                            Color(0x14FFFFFF)
+                        )
+                    )
+                )
+                .border(1.dp, Color(0x3DFFFFFF), RoundedCornerShape(26.dp))
+                .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text("إجمالي الكروت: ${vouchers.size} (الاحتياط: $queuedCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("إجمالي التكلفة المسجلة: ${totalPrice.toInt()} ريال", fontSize = 13.sp, color = Color(0xFF38BDF8))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("محفظة كروتي", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column {
+                            Text("الكروت", fontSize = 11.sp, color = InkSecondary)
+                            Text(
+                                "${vouchers.size}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 24.sp,
+                                color = Color.White
+                            )
+                        }
+                        Column {
+                            Text("الاحتياط", fontSize = 11.sp, color = InkSecondary)
+                            Text(
+                                "$queuedCount",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 24.sp,
+                                color = Color.White
+                            )
+                        }
+                        Column {
+                            Text("التكلفة (ريال)", fontSize = 11.sp, color = InkSecondary)
+                            Text(
+                                "${totalPrice.toInt()}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 24.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
                 IconButton(onClick = { maskCodes = !maskCodes }) {
                     Icon(
                         imageVector = if (maskCodes) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = "إخفاء/إظهار الأرقام"
+                        contentDescription = "إخفاء/إظهار الأرقام",
+                        tint = Color.White
                     )
                 }
             }
@@ -148,7 +200,7 @@ fun WalletScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(displayCode, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                Text(displayCode, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AuroraCyan)
                                 Text(
                                     text = when (voucher.status) {
                                         "ACTIVE" -> "نشط ✅"
@@ -157,7 +209,7 @@ fun WalletScreen(
                                         else -> voucher.status
                                     },
                                     fontSize = 12.sp,
-                                    color = Color(0xFF10B981)
+                                    color = AuroraEmerald
                                 )
                             }
 
@@ -194,7 +246,7 @@ fun WalletScreen(
                                     Icon(Icons.Default.ContentCopy, contentDescription = "نسخ", modifier = Modifier.size(18.dp))
                                 }
                                 IconButton(onClick = { viewModel.deleteVoucher(voucher) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color(0xFFEF4444))
+                                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = AuroraRose)
                                 }
                             }
                         }

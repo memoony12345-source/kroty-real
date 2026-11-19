@@ -20,11 +20,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -33,6 +37,14 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.domain.network.PortalDiscovery
 import com.example.domain.web.MikroTikJsScripts
 import com.example.ui.KrotyViewModel
+import com.example.ui.theme.AuroraAmber
+import com.example.ui.theme.AuroraCyan
+import com.example.ui.theme.AuroraEmerald
+import com.example.ui.theme.AuroraRose
+import com.example.ui.theme.AuroraViolet
+import com.example.ui.theme.GlassChip
+import com.example.ui.theme.InkMuted
+import com.example.ui.theme.InkSecondary
 import kotlinx.coroutines.launch
 
 @Composable
@@ -73,7 +85,7 @@ fun RadarScreen(viewModel: KrotyViewModel,
                 },
                 modifier = Modifier.weight(1f).height(48.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00E5FF),
+                    containerColor = AuroraCyan,
                     contentColor = Color(0xFF0A0E17)
                 ),
                 shape = RoundedCornerShape(14.dp)
@@ -95,7 +107,7 @@ fun RadarScreen(viewModel: KrotyViewModel,
                 },
                 modifier = Modifier.weight(1f).height(48.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00E676),
+                    containerColor = AuroraEmerald,
                     contentColor = Color(0xFF0A0E17)
                 ),
                 shape = RoundedCornerShape(14.dp)
@@ -173,7 +185,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
         // Location Permission / GPS Warning Banner if SSID is hidden by Android
         if (wifi.locationPermissionMissing) {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF451A03)),
+                colors = CardDefaults.cardColors(containerColor = Color(0x24FBBF24)),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Row(
@@ -189,72 +201,95 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     TextButton(onClick = {
                         context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     }) {
-                        Text("تفعيل GPS", color = Color(0xFF38BDF8))
+                        Text("تفعيل GPS", color = AuroraCyan)
                     }
                 }
             }
         }
 
-        // Main Dynamic Network Radar Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        // Main Dynamic Network Radar Card — frosted hero
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(24.dp, RoundedCornerShape(28.dp), spotColor = AuroraViolet)
+                .clip(RoundedCornerShape(28.dp))
+                .background(
+                    Brush.verticalGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF)))
+                )
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(listOf(Color(0x4DFFFFFF), Color(0x0DFFFFFF))),
+                    RoundedCornerShape(28.dp)
+                )
+                .padding(horizontal = 18.dp, vertical = 20.dp)
         ) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Default.Wifi,
-                    contentDescription = null,
-                    tint = if (wifi.isConnectedToWifi) Color(0xFF38BDF8) else Color.Gray,
-                    modifier = Modifier.size(54.dp)
-                )
-                Spacer(Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(
+                                    if (wifi.isConnectedToWifi) AuroraCyan.copy(alpha = 0.34f)
+                                    else Color(0x1FFFFFFF),
+                                    Color.Transparent
+                                )
+                            ),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        tint = if (wifi.isConnectedToWifi) AuroraCyan else InkMuted,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = wifi.ssid,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (portalHost.isNotBlank()) "بوابة الشبكة المكتشفة: $portalHost • BSSID: ${wifi.bssid}"
+                    text = if (portalHost.isNotBlank())
+                        "بوابة الشبكة المكتشفة: $portalHost"
                     else "يرجى الاتصال بشبكة Wi-Fi لاكتشاف البوابة تلقائياً",
-                    fontSize = 13.sp,
-                    color = Color(0xFF94A3B8)
+                    fontSize = 12.sp,
+                    color = InkMuted,
+                    textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(10.dp))
+                if (wifi.bssid.isNotBlank()) {
+                    Text(
+                        text = "BSSID: ${wifi.bssid}",
+                        fontSize = 10.sp,
+                        color = InkMuted.copy(alpha = 0.7f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        color = Color(0xFF0F2942),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(
-                            text = "الإشارة: ${wifi.signalPercent}% (${wifi.rssiDbm} dBm)",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
-                    Surface(
-                        color = if (session.isInternetReachable) Color(0xFF064E3B) else Color(0xFF3B181E),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(
-                            text = if (session.isInternetReachable) "البوابة متصلة ✅" else "بانتظار الدخول 🔒",
-                            color = if (session.isInternetReachable) Color(0xFF34D399) else Color(0xFFF87171),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
+                    GlassChip(
+                        text = "الإشارة: ${wifi.signalPercent}% • ${wifi.rssiDbm} dBm",
+                        accent = AuroraCyan
+                    )
+                    GlassChip(
+                        text = if (session.isInternetReachable) "البوابة متصلة ✅" else "بانتظار الدخول 🔒",
+                        accent = if (session.isInternetReachable) AuroraEmerald else AuroraRose
+                    )
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Text(
                     text = session.statusMessage,
-                    fontSize = 13.sp,
-                    color = Color(0xFFCBD5E1)
+                    fontSize = 12.sp,
+                    color = InkSecondary,
+                    textAlign = TextAlign.Center
                 )
             }
         }
@@ -282,7 +317,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                 ) {
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                        colors = CardDefaults.cardColors(containerColor = Color(0x17FFFFFF))
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("بوابة الراوتر (${dynamicGateway.ifBlank { "---" }})", fontSize = 12.sp, color = Color.Gray)
@@ -290,13 +325,13 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                                 text = wifi.routerPingMs?.let { "$it ms" } ?: "غير متاح",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF10B981)
+                                color = AuroraEmerald
                             )
                         }
                     }
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                        colors = CardDefaults.cardColors(containerColor = Color(0x17FFFFFF))
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("الإنترنت العالمي (8.8.8.8)", fontSize = 12.sp, color = Color.Gray)
@@ -304,7 +339,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                                 text = wifi.internetPingMs?.let { "$it ms" } ?: "غير متصل",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (wifi.internetPingMs != null) Color(0xFF10B981) else Color(0xFFF59E0B)
+                                color = if (wifi.internetPingMs != null) AuroraEmerald else Color(0xFFF59E0B)
                             )
                         }
                     }
@@ -329,7 +364,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     ) {
                         Column {
                             Text("رقم الكرت المتصل", fontSize = 12.sp, color = Color.Gray)
-                            Text(v.code, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                            Text(v.code, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AuroraCyan)
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("الرصيد المتبقي الفعلي", fontSize = 12.sp, color = Color.Gray)
@@ -337,7 +372,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                                 text = v.remainingMegabytes?.let { "${String.format("%.1f", it)} MB" } ?: "افتح صفحة الرصيد للقراءة",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF10B981)
+                                color = AuroraEmerald
                             )
                         }
                     }
@@ -345,7 +380,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                     Text(
                         text = "لا يوجد كرت مسجل حالياً. اضغط (فتح صفحة الرصيد / البوابة) لقراءة الكرت المتصل حالياً من الشبكة، أو امسح كرتاً جديداً بالكاميرا.",
                         fontSize = 13.sp,
-                        color = Color(0xFF94A3B8)
+                        color = InkMuted
                     )
                 }
 
@@ -381,7 +416,7 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                         showPortalDialog = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = Color(0xFF04121A))
                 ) {
                     Icon(Icons.Default.Language, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -409,8 +444,8 @@ private fun RadarScreenOriginal(viewModel: KrotyViewModel,
                 Text("روابط البوابة المكتشفة ديناميكياً للشبكة الحالية", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text("بوابة الشبكة الحقيقية (Portal): ${portalHost.ifBlank { "بانتظار الواي فاي" }}", fontSize = 13.sp)
                 Text("عنوان البوابة (Gateway): ${dynamicGateway.ifBlank { "---" }}", fontSize = 12.sp, color = Color.Gray)
-                Text("رابط الدخول: ${dynamicLoginUrl.ifBlank { "---" }}", fontSize = 13.sp, color = Color(0xFF38BDF8))
-                Text("رابط الرصيد: ${dynamicStatusUrl.ifBlank { "---" }}", fontSize = 13.sp, color = Color(0xFF10B981))
+                Text("رابط الدخول: ${dynamicLoginUrl.ifBlank { "---" }}", fontSize = 13.sp, color = AuroraCyan)
+                Text("رابط الرصيد: ${dynamicStatusUrl.ifBlank { "---" }}", fontSize = 13.sp, color = AuroraEmerald)
                 Text(
                     "محدد الحقل المتعلم: ${session.currentNetwork?.learnedInputSelector ?: "تلقائي (الأوزان الذكية)"}",
                     fontSize = 12.sp,
@@ -469,14 +504,14 @@ fun RealPortalWebViewDialog(
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF0B1120)
+            color = Color(0xFF05070F)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Top URL & Controls Header
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF162032))
+                        .background(Color(0x1FFFFFFF))
                         .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -496,7 +531,7 @@ fun RealPortalWebViewDialog(
                             val target = if (urlInput.startsWith("http")) urlInput else "http://$urlInput"
                             webViewRef?.loadUrl(target)
                         }) {
-                            Icon(Icons.Default.ArrowForward, contentDescription = "انتقال", tint = Color(0xFF38BDF8))
+                            Icon(Icons.Default.ArrowForward, contentDescription = "انتقال", tint = AuroraCyan)
                         }
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color(0xFFEF4444))
@@ -544,7 +579,7 @@ fun RealPortalWebViewDialog(
                                 Text(
                                     if (touchLearnMode) "إلمس المربع الآن 👆" else "تعليم المربع 👆",
                                     fontSize = 11.sp,
-                                    color = if (touchLearnMode) Color(0xFF10B981) else Color.White
+                                    color = if (touchLearnMode) AuroraEmerald else Color.White
                                 )
                             }
                         )
@@ -552,7 +587,7 @@ fun RealPortalWebViewDialog(
                 }
 
                 if (isLoading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF38BDF8))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AuroraCyan)
                 }
 
                 // Real Full-Screen Android WebView
@@ -704,8 +739,8 @@ fun LiveAutoPilotSessionBanner(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF102338)),
-        border = BorderStroke(1.5.dp, Color(0xFF00E676)),
+        colors = CardDefaults.cardColors(containerColor = Color(0x1FFFFFFF)),
+        border = BorderStroke(1.5.dp, AuroraEmerald),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -721,11 +756,11 @@ fun LiveAutoPilotSessionBanner(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(Color(0xFF00E676))
+                            .background(AuroraEmerald)
                     )
                     Text(
                         text = "بيانات الجلسة الحية المستخرجة تلقائياً",
-                        color = Color(0xFF00E676),
+                        color = AuroraEmerald,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -747,7 +782,7 @@ fun LiveAutoPilotSessionBanner(
                     if (balanceText.isNotBlank()) {
                         Text(
                             text = "📦 الرصيد: $balanceText",
-                            color = Color(0xFF00E5FF),
+                            color = AuroraCyan,
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -758,7 +793,7 @@ fun LiveAutoPilotSessionBanner(
                 if (timeText.isNotBlank()) {
                     Text(
                         text = "⏱️ الصلاحية/الوقت: $timeText",
-                        color = Color(0xFFFFB300),
+                        color = AuroraAmber,
                         fontSize = 11.sp,
                         maxLines = 1,
                         softWrap = false
@@ -771,14 +806,14 @@ fun LiveAutoPilotSessionBanner(
                     OutlinedButton(
                         onClick = { copyVoucherToClipboard(context, voucherCode) },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF))
+                        border = BorderStroke(1.dp, AuroraCyan)
                     ) {
-                        Text("نسخ", color = Color(0xFF00E5FF), fontSize = 11.sp, maxLines = 1, softWrap = false)
+                        Text("نسخ", color = AuroraCyan, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     }
                 }
                 Button(
                     onClick = onOpenPortal,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraEmerald, contentColor = Color.Black),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text("تحديث", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
@@ -1397,8 +1432,8 @@ fun PatternGuidedForensicSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-        border = BorderStroke(1.5.dp, Color(0xFF00E5FF)),
+        colors = CardDefaults.cardColors(containerColor = Color(0x17FFFFFF)),
+        border = BorderStroke(1.5.dp, AuroraCyan),
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(
@@ -1413,7 +1448,7 @@ fun PatternGuidedForensicSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF))
+                    Icon(Icons.Default.Search, contentDescription = null, tint = AuroraCyan)
                     Text(
                         text = "🕵️‍♂️ البحث العميق الموجه عن الكرت الضائع",
                         color = Color(0xFFF8FAFC),
@@ -1426,23 +1461,23 @@ fun PatternGuidedForensicSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Button(
                         onClick = onTriggerScan,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color.Black),
+                        colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = Color.Black),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("🚀 فحص الآن", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     }
                     IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color(0xFF94A3B8))
+                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = InkMuted)
                     }
                 }
             }
 
             // 1. User Pattern Suggestion Controls (Card Length + Prefix + Suffix)
             Surface(
-                color = Color(0xFF162238),
+                color = Color(0x24FFFFFF),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                border = BorderStroke(1.dp, Color(0x2BFFFFFF)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -1451,7 +1486,7 @@ fun PatternGuidedForensicSheet(
                 ) {
                     Text(
                         text = "1️⃣ حدد عدد أرقام الكرت في هذه الشبكة (لتصفية الكود بدقة):",
-                        color = Color(0xFF00E5FF),
+                        color = AuroraCyan,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -1470,8 +1505,8 @@ fun PatternGuidedForensicSheet(
                                 onClick = { onSelectLength(lenVal) },
                                 label = { Text(label, fontSize = 11.sp, maxLines = 1, softWrap = false) },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.25f),
-                                    selectedLabelColor = Color(0xFF00E5FF)
+                                    selectedContainerColor = AuroraCyan.copy(alpha = 0.25f),
+                                    selectedLabelColor = AuroraCyan
                                 )
                             )
                         }
@@ -1479,7 +1514,7 @@ fun PatternGuidedForensicSheet(
 
                     Text(
                         text = "2️⃣ هل توجد أرقام ثابتة في بداية أو نهاية الكرت؟ (اختياري):",
-                        color = Color(0xFFFFB300),
+                        color = AuroraAmber,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -1513,10 +1548,10 @@ fun PatternGuidedForensicSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color(0xFF00E5FF), strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = AuroraCyan, strokeWidth = 2.dp)
                     Text(
                         text = "جاري سحب سورس البوابة (/status و /login) وفحص الكوكيز والتعليقات...",
-                        color = Color(0xFF00E5FF),
+                        color = AuroraCyan,
                         fontSize = 11.sp,
                         maxLines = 1
                     )
@@ -1525,9 +1560,9 @@ fun PatternGuidedForensicSheet(
 
             if (bestCandidate != null) {
                 Surface(
-                    color = Color(0xFF00E676).copy(alpha = 0.14f),
+                    color = AuroraEmerald.copy(alpha = 0.14f),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.5.dp, Color(0xFF00E676)),
+                    border = BorderStroke(1.5.dp, AuroraEmerald),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -1541,7 +1576,7 @@ fun PatternGuidedForensicSheet(
                         ) {
                             Text(
                                 text = "🎯 أفضل كرت مطابق تم استخراجه:",
-                                color = Color(0xFF00E676),
+                                color = AuroraEmerald,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 maxLines = 1,
@@ -1549,7 +1584,7 @@ fun PatternGuidedForensicSheet(
                             )
                             Text(
                                 text = "تطابق ${bestCandidate.confidence}%",
-                                color = Color(0xFF00E5FF),
+                                color = AuroraCyan,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
                                 maxLines = 1,
@@ -1572,7 +1607,7 @@ fun PatternGuidedForensicSheet(
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(
                                     onClick = { copyVoucherToClipboard(context, bestCandidate.code) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color.Black),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = Color.Black),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -1583,7 +1618,7 @@ fun PatternGuidedForensicSheet(
                                         onSaveToWallet(bestCandidate.code)
                                         copyVoucherToClipboard(context, bestCandidate.code)
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AuroraEmerald, contentColor = Color.Black),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -1594,7 +1629,7 @@ fun PatternGuidedForensicSheet(
 
                         Text(
                             text = "${bestCandidate.sourceLayer} • ${bestCandidate.rawDetail}",
-                            color = Color(0xFF94A3B8),
+                            color = InkMuted,
                             fontSize = 10.sp,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -1604,7 +1639,7 @@ fun PatternGuidedForensicSheet(
             } else if (!isScanning) {
                 Text(
                     text = "💡 نصيحة: اختر عدد أرقام الكرت أو اكتب أول رقمين منه في الخانة أعلاه، أو افتح (/status) ثم اضغط (🚀 فحص الآن).",
-                    color = Color(0xFFFFB300),
+                    color = AuroraAmber,
                     fontSize = 11.sp
                 )
             }
@@ -1612,7 +1647,7 @@ fun PatternGuidedForensicSheet(
             if (candidates.size > 1) {
                 Text(
                     text = "جميع الأكواد المكتشفة المطابقة للمواصفات (${candidates.size}):",
-                    color = Color(0xFF94A3B8),
+                    color = InkMuted,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1625,7 +1660,7 @@ fun PatternGuidedForensicSheet(
                 ) {
                     candidates.forEach { item ->
                         Surface(
-                            color = Color(0xFF1E293B),
+                            color = Color(0x2BFFFFFF),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -1639,14 +1674,14 @@ fun PatternGuidedForensicSheet(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "${item.code}  (${item.confidence}%)",
-                                        color = Color(0xFF00E5FF),
+                                        color = AuroraCyan,
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp
                                     )
                                     Text(
                                         text = "${item.sourceLayer} • ${item.rawDetail}",
-                                        color = Color(0xFF94A3B8),
+                                        color = InkMuted,
                                         fontSize = 10.sp,
                                         maxLines = 1,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -1654,13 +1689,13 @@ fun PatternGuidedForensicSheet(
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     TextButton(onClick = { copyVoucherToClipboard(context, item.code) }) {
-                                        Text("نسخ", color = Color(0xFF00E5FF), fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                        Text("نسخ", color = AuroraCyan, fontSize = 11.sp, maxLines = 1, softWrap = false)
                                     }
                                     TextButton(onClick = {
                                         onSaveToWallet(item.code)
                                         copyVoucherToClipboard(context, item.code)
                                     }) {
-                                        Text("حفظ", color = Color(0xFF00E676), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                        Text("حفظ", color = AuroraEmerald, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
                                     }
                                 }
                             }
@@ -1747,11 +1782,11 @@ fun ModernCyberPortalCockpitDialog(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF080D16))
+                .background(Color(0xF205070F))
         ) {
             // Unified Modern Glassmorphic Cockpit Header
             Surface(
-                color = Color(0xFF0F172A),
+                color = Color(0x17FFFFFF),
                 tonalElevation = 10.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1777,7 +1812,7 @@ fun ModernCyberPortalCockpitDialog(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF1E293B))
+                                .background(Color(0x2BFFFFFF))
                         ) {
                             Icon(Icons.Default.ArrowForward, contentDescription = "رجوع", tint = Color(0xFFF8FAFC), modifier = Modifier.size(16.dp))
                         }
@@ -1790,9 +1825,9 @@ fun ModernCyberPortalCockpitDialog(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF1E293B))
+                                .background(Color(0x2BFFFFFF))
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = AuroraCyan, modifier = Modifier.size(16.dp))
                         }
 
                         Row(
@@ -1800,7 +1835,7 @@ fun ModernCyberPortalCockpitDialog(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFF070B12))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                                .border(1.dp, Color(0x2BFFFFFF), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1808,12 +1843,12 @@ fun ModernCyberPortalCockpitDialog(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(Color(0xFF00E676))
+                                    .background(AuroraEmerald)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = currentUrl,
-                                color = Color(0xFF00E5FF),
+                                color = AuroraCyan,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 maxLines = 1,
@@ -1837,9 +1872,9 @@ fun ModernCyberPortalCockpitDialog(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (isDesktopMode) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B))
+                                .background(if (isDesktopMode) AuroraCyan.copy(alpha = 0.25f) else Color(0x2BFFFFFF))
                         ) {
-                            Icon(Icons.Default.Computer, contentDescription = "كمبيوتر", tint = if (isDesktopMode) Color(0xFF00E5FF) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Computer, contentDescription = "كمبيوتر", tint = if (isDesktopMode) AuroraCyan else InkMuted, modifier = Modifier.size(16.dp))
                         }
 
                         IconButton(
@@ -1857,7 +1892,7 @@ fun ModernCyberPortalCockpitDialog(
                     Surface(
                         color = Color(0xFF0D1B2A),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, AuroraEmerald.copy(alpha = 0.5f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -1874,7 +1909,7 @@ fun ModernCyberPortalCockpitDialog(
                             ) {
                                 Text(
                                     text = if (KrotyAutoPilotHub.liveVoucherCode.isNotBlank()) "💳 الكرت: ${KrotyAutoPilotHub.liveVoucherCode}" else "🤖 ${KrotyAutoPilotHub.autoPilotStatusMessage}",
-                                    color = Color(0xFF00E676),
+                                    color = AuroraEmerald,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
                                     maxLines = 1,
@@ -1883,7 +1918,7 @@ fun ModernCyberPortalCockpitDialog(
                                 if (KrotyAutoPilotHub.liveBalanceText.isNotBlank()) {
                                     Text(
                                         text = "📦 الرصيد: ${KrotyAutoPilotHub.liveBalanceText}",
-                                        color = Color(0xFF00E5FF),
+                                        color = AuroraCyan,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp,
                                         maxLines = 1,
@@ -1893,7 +1928,7 @@ fun ModernCyberPortalCockpitDialog(
                                 if (KrotyAutoPilotHub.liveTimeText.isNotBlank()) {
                                     Text(
                                         text = "⏱️ الوقت: ${KrotyAutoPilotHub.liveTimeText}",
-                                        color = Color(0xFFFFB300),
+                                        color = AuroraAmber,
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         softWrap = false
@@ -1909,7 +1944,7 @@ fun ModernCyberPortalCockpitDialog(
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                     modifier = Modifier.height(26.dp)
                                 ) {
-                                    Text("💾 حفظ ونسخ", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                    Text("💾 حفظ ونسخ", color = AuroraCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 }
                             }
                         }
@@ -1932,10 +1967,10 @@ fun ModernCyberPortalCockpitDialog(
                                 Text("🕵️‍♂️ البحث عن الكرت الضائع", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (showForensicSheet) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF1E293B),
-                                labelColor = Color(0xFF00E5FF)
+                                containerColor = if (showForensicSheet) AuroraCyan.copy(alpha = 0.25f) else Color(0x2BFFFFFF),
+                                labelColor = AuroraCyan
                             ),
-                            border = BorderStroke(1.2.dp, Color(0xFF00E5FF))
+                            border = BorderStroke(1.2.dp, AuroraCyan)
                         )
 
                         AssistChip(
@@ -1951,10 +1986,10 @@ fun ModernCyberPortalCockpitDialog(
                                 Text("⚡ دخول تلقائي فوري", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF00E676).copy(alpha = 0.2f),
-                                labelColor = Color(0xFF00E676)
+                                containerColor = AuroraEmerald.copy(alpha = 0.2f),
+                                labelColor = AuroraEmerald
                             ),
-                            border = BorderStroke(1.2.dp, Color(0xFF00E676))
+                            border = BorderStroke(1.2.dp, AuroraEmerald)
                         )
 
                         AssistChip(
@@ -1966,7 +2001,7 @@ fun ModernCyberPortalCockpitDialog(
                                 Text("📊 الرصيد (/status)", fontSize = 11.sp, maxLines = 1, softWrap = false)
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF1E293B),
+                                containerColor = Color(0x2BFFFFFF),
                                 labelColor = Color(0xFFF8FAFC)
                             )
                         )
@@ -1980,7 +2015,7 @@ fun ModernCyberPortalCockpitDialog(
                                 Text("🔑 الدخول (/login)", fontSize = 11.sp, maxLines = 1, softWrap = false)
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF1E293B),
+                                containerColor = Color(0x2BFFFFFF),
                                 labelColor = Color(0xFFF8FAFC)
                             )
                         )
@@ -1994,7 +2029,7 @@ fun ModernCyberPortalCockpitDialog(
                                 Text("❄️ تجميد الكرت (/logout)", fontSize = 11.sp, maxLines = 1, softWrap = false)
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF1E293B),
+                                containerColor = Color(0x2BFFFFFF),
                                 labelColor = Color(0xFFFF5252)
                             )
                         )
@@ -2150,9 +2185,9 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color(0xFF080D16))) {
+    Column(modifier = modifier.fillMaxSize().background(Color(0xF205070F))) {
         Surface(
-            color = Color(0xFF0F172A),
+            color = Color(0x17FFFFFF),
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -2173,10 +2208,10 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
                         Text("🕵️‍♂️ البحث الموجه عن الكرت الضائع", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     },
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Color(0xFF00E5FF).copy(alpha = 0.22f),
-                        labelColor = Color(0xFF00E5FF)
+                        containerColor = AuroraCyan.copy(alpha = 0.22f),
+                        labelColor = AuroraCyan
                     ),
-                    border = BorderStroke(1.2.dp, Color(0xFF00E5FF))
+                    border = BorderStroke(1.2.dp, AuroraCyan)
                 )
 
                 AssistChip(
@@ -2190,10 +2225,10 @@ fun <T : android.view.View> KrotyCockpitAndroidView(
                         Text("⚡ دخول تلقائي وقراءة الرصيد", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     },
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Color(0xFF00E676).copy(alpha = 0.22f),
-                        labelColor = Color(0xFF00E676)
+                        containerColor = AuroraEmerald.copy(alpha = 0.22f),
+                        labelColor = AuroraEmerald
                     ),
-                    border = BorderStroke(1.2.dp, Color(0xFF00E676))
+                    border = BorderStroke(1.2.dp, AuroraEmerald)
                 )
             }
         }

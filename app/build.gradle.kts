@@ -14,8 +14,8 @@ android {
         applicationId = "com.aistudio.kurootinet.zxpq"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "3.6.1-REAL"
+        versionCode = 12
+        versionName = "3.7.0-REAL"
 
         vectorDrawables {
             useSupportLibrary = true

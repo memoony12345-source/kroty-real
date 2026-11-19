@@ -28,6 +28,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -38,6 +40,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.domain.scanner.KrotyCameraAnalyzer
 import com.example.ui.KrotyViewModel
+import com.example.ui.theme.AuroraAmber
+import com.example.ui.theme.AuroraCyan
+import com.example.ui.theme.AuroraEmerald
+import com.example.ui.theme.AuroraRose
+import com.example.ui.theme.InkSecondary
+import com.example.ui.theme.AuroraViolet
 import java.util.concurrent.Executors
 
 @Composable
@@ -125,11 +133,11 @@ fun ScannerScreen(
                             Icon(
                                 imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
                                 contentDescription = "الفلاش",
-                                tint = if (torchEnabled) Color(0xFFFBBF24) else Color.White
+                                tint = if (torchEnabled) AuroraAmber else Color.White
                             )
                         }
                         IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = "صورة من المعرض", tint = Color(0xFF38BDF8))
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = "صورة من المعرض", tint = AuroraCyan)
                         }
                     }
                 }
@@ -138,10 +146,15 @@ fun ScannerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(230.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Black)
-                        .border(2.dp, Color(0xFF38BDF8), RoundedCornerShape(16.dp)),
+                        .height(232.dp)
+                        .shadow(22.dp, RoundedCornerShape(22.dp), spotColor = AuroraCyan)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFF04070D))
+                        .border(
+                            2.dp,
+                            Brush.linearGradient(listOf(AuroraCyan, AuroraViolet, AuroraEmerald)),
+                            RoundedCornerShape(22.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     if (hasCameraPermission) {
@@ -213,7 +226,7 @@ fun ScannerScreen(
                             modifier = Modifier
                                 .fillMaxWidth(0.82f)
                                 .height(95.dp)
-                                .border(2.dp, Color(0xFF10B981), RoundedCornerShape(12.dp))
+                                .border(2.dp, AuroraEmerald, RoundedCornerShape(12.dp))
                         )
 
                         // Live Detected Overlay Badge at Bottom of Camera
@@ -228,7 +241,7 @@ fun ScannerScreen(
                                 text = if (liveDetectedCode.isNotBlank())
                                     "الملتقط: $liveDetectedCode (${(confidence * 100).toInt()}%)"
                                 else statusBanner,
-                                color = Color(0xFF38BDF8),
+                                color = AuroraCyan,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -361,7 +374,7 @@ fun ScannerScreen(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                        colors = ButtonDefaults.buttonColors(containerColor = AuroraEmerald)
                     ) {
                         Icon(Icons.Default.Bolt, contentDescription = null)
                         Spacer(Modifier.width(4.dp))

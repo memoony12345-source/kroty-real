@@ -18,6 +18,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.KrotyViewModel
+import com.example.ui.theme.AuroraAmber
+import com.example.ui.theme.AuroraCyan
+import com.example.ui.theme.AuroraEmerald
+import com.example.ui.theme.AuroraRose
+import com.example.ui.theme.InkSecondary
 import com.example.service.PortalNotificationListener
 import com.example.worker.SmartBalanceWorker
 import kotlinx.coroutines.launch
@@ -47,7 +52,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         feedbackBanner?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B))) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0x2E34D399))) {
                 Text(it, modifier = Modifier.padding(12.dp), color = Color.White, fontSize = 13.sp)
             }
         }
@@ -75,9 +80,9 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = themeMode == "DARK", onClick = { viewModel.setThemeMode("DARK") }, label = { Text("داكن ملكي") })
-                    FilterChip(selected = themeMode == "AMOLED", onClick = { viewModel.setThemeMode("AMOLED") }, label = { Text("أسود AMOLED") })
-                    FilterChip(selected = themeMode == "LIGHT", onClick = { viewModel.setThemeMode("LIGHT") }, label = { Text("فاتح") })
+                    FilterChip(selected = themeMode == "DARK", onClick = { viewModel.setThemeMode("DARK") }, label = { Text("أورورا زجاجي") })
+                    FilterChip(selected = themeMode == "AMOLED", onClick = { viewModel.setThemeMode("AMOLED") }, label = { Text("أسود صافي") })
+                    FilterChip(selected = themeMode == "LIGHT", onClick = { viewModel.setThemeMode("LIGHT") }, label = { Text("فاتح لؤلؤي") })
                 }
 
                 Button(
@@ -109,7 +114,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                     else
                         "غير مفعّل — فعّل «الوصول إلى الإشعارات» لكروتي ليكتشف البوابة لحظة ظهور إشعار الشبكة.",
                     fontSize = 12.sp,
-                    color = if (notifAccessEnabled) Color(0xFF34D399) else Color(0xFFFBBF24)
+                    color = if (notifAccessEnabled) AuroraEmerald else AuroraAmber
                 )
                 Button(
                     onClick = {
@@ -175,7 +180,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                 } else {
                     networks.forEach { net ->
                         Surface(
-                            color = Color(0xFF0F172A),
+                            color = Color(0x17FFFFFF),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -186,7 +191,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(net.ssid, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text("البوابة: ${net.gatewayIp} • الدخول: ${net.loginUrl}", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                                    Text("البوابة: ${net.gatewayIp} • الدخول: ${net.loginUrl}", fontSize = 11.sp, color = AuroraCyan)
                                 }
                                 if (net.learnedInputSelector != null) {
                                     TextButton(onClick = {
@@ -219,7 +224,7 @@ fun SettingsScreen(viewModel: KrotyViewModel) {
                     Text("لا توجد أحداث مسجلة بعد.", fontSize = 12.sp, color = Color.Gray)
                 } else {
                     logs.take(15).forEach { log ->
-                        Text("• [${log.networkSsid}] ${log.messageAr}", fontSize = 12.sp, color = Color(0xFFCBD5E1))
+                        Text("• [${log.networkSsid}] ${log.messageAr}", fontSize = 12.sp, color = InkSecondary)
                     }
                 }
             }
