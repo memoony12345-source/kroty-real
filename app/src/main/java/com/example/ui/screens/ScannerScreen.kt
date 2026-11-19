@@ -75,6 +75,7 @@ fun ScannerScreen(
     var torchEnabled by remember { mutableStateOf(false) }
     var zoomRatio by remember { mutableStateOf(1f) }
     var autoConnectOnConsensus by remember { mutableStateOf(false) }
+    var numericCardMode by remember { mutableStateOf(false) }
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var statusBanner by remember { mutableStateOf("وجّه الكاميرا الحقيقية نحو أرقام الكرت أو الباركود") }
 
@@ -165,7 +166,7 @@ fun ScannerScreen(
                                         }
                                         val analyzer = KrotyCameraAnalyzer(
                                             getExpectedLength = { selectedLengthLock },
-                                            isNumericOnly = { false },
+                                            isNumericOnly = { numericCardMode },
                                             onLiveCandidate = { candidate, prog, confirmed ->
                                                 liveDetectedCode = candidate.code
                                                 confidence = prog
@@ -272,8 +273,6 @@ fun ScannerScreen(
                         )
                     }
                 }
-
-                // Auto-Connect Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -281,6 +280,24 @@ fun ScannerScreen(
                 ) {
                     Text("الاتصال التلقائي بالبوابة فور التقاط الكرت ⚡", fontSize = 13.sp)
                     Switch(checked = autoConnectOnConsensus, onCheckedChange = { autoConnectOnConsensus = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("كرت أرقام فقط (بدون حروف)", fontSize = 13.sp)
+                        Text(
+                            "فعّله لكروت الفئة الرقمية ليتجاهل الحروف المشابهة للأرقام",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(checked = numericCardMode, onCheckedChange = {
+                        numericCardMode = it
+                        statusBanner = if (it) "وضع الأرقام فقط مفعّل" else "الوضع التلقائي (أرقام وحروف)"
+                    })
                 }
             }
         }
